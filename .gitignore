@@ -1,0 +1,61 @@
+# Latex files
+
+*.aux
+*.glo
+*.idx
+*.toc
+*.ist
+*.acn
+*.acr
+*.alg
+*.bbl
+*.blg
+*.tui
+*.top
+*.tmp
+*.mp
+*.dvi
+*.glg
+*.gls
+*.ilg
+*.ind
+*.lof
+*.lot
+*.maf
+*.mtc
+*.mtc1
+*.out
+*.synctex.gz
+*.bcf
+*.fdb_latexmk
+*.fls
+*.run.xml
+# Mac IDE files
+*.swp
+*.log
+*.pdf
+*~
+*(Autosaved).rtfd/
+Backup[ ]of[ ]*.pages/
+Backup[ ]of[ ]*.key/
+Backup[ ]of[ ]*.numbers/
+
+# Mac finder files and hidden folders
+.DS_Store
+
+# python files:
+__pycache__
+
+# jupyter notebook checkpoints
+*.ipynb_checkpoints
+
+# large result files
+*.pt
+*.csv
+*.png
+*.yaml
+
+# python virtual environment
+venv_neural_matching/
+
+wandb/
