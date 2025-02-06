@@ -74,12 +74,15 @@ class EdgeWeightGNN(nn.Module):
         edge_weights_mean = self.edge_mlp(edge_embedding).squeeze(-1)  # [num_edges]
         # print("Mean of the edge weights:", edge_weights_mean)
 
-        # Sample from the Gaussian distribution (mean, stddev)
+        # Step 7: Sample from the Gaussian distribution (mean, stddev)
         epsilon = torch.randn_like(edge_weights_mean)  # Standard normal noise
         sampled_edge_weights = edge_weights_mean + self.stddev * epsilon  # Sampled edge weights
 
+        # # Step 8: Ensure edges are in the (0,1) range
+        # sampled_edge_weights_0_1 = torch.sigmoid(sampled_edge_weights) 
+
         # Compute log-probabilities for the REINFORCE update
-        log_probs = self.compute_log_probs(edge_weights_mean, sampled_edge_weights)
+        log_probs = self.compute_log_probs(edge_weights_mean, sampled_edge_weights)#, sampled_edge_weights_0_1)
         
         return edge_index, sampled_edge_weights, num_real_nodes, log_probs
     
@@ -89,7 +92,7 @@ class EdgeWeightGNN(nn.Module):
         the edge index by re-numbering the nodes starting from 0, to n_X_nodes
 
         Args:
-            x (torch.Tensor): Node features of shape [num_nodes, num_features].
+            x    (torch.Tensor): Node features of shape [num_nodes, num_features].
             edge_index (torch.Tensor): Edge indices of shape [2, num_edges].
             edge_weights (torch.Tensor): Edge weights of shape [num_edges, 1].
 
@@ -183,10 +186,13 @@ class EdgeWeightGNN(nn.Module):
         Args:
             means: The predicted means from the GNN.
             sampled_edge_weights: The sampled edge weights.
+            ((sampled_edge_weights_0_1: The sampled edge weights (after sigmoid).))
 
         Returns:
-            log_probs: The log-probabilities of the sampled edge weights.
+            log_probs: The log-probabilities of the sampled edge weights (after sigmoid)
         """
         # Log probability of the sampled value under the Gaussian distribution
         log_probs = -0.5 * torch.log(2 * torch.pi * self.stddev**2) - (sampled_edge_weights - means)**2 / (2 * self.stddev**2)
+        # # the correction from the sigmoid transformation:
+        # log_probs -= torch.log(sampled_edge_weights_0_1 * (1 - sampled_edge_weights_0_1))
         return log_probs

@@ -18,23 +18,21 @@ def compute_mwpm_reward(edge_index, edge_weights, num_real_nodes, logical_class)
     
     Note: The virtual nodes on the western boundary have indices n, ... 2*n - 1
     """
-    # Create an empty undirected graph
+    edge_index = edge_index.detach().numpy()
+    edge_weights = edge_weights.detach().numpy()
     G = nx.Graph()
 
     # Add edges with weights using a generator
     G.add_edges_from((u, v, {"weight": -w}) for u, v, w in zip(edge_index[0], edge_index[1], edge_weights))
-
     # add boundary nodes (if n_real nodes odd, add an extra virtual node):
     num_boundary_nodes = 2 * num_real_nodes if num_real_nodes % 2 == 0 else 2 * num_real_nodes +1
     # boundary nodes (fully connected)
-    boundary_nodes = np.arange(num_real_nodes, num_boundary_nodes)  
+    boundary_nodes = np.arange(num_real_nodes, num_boundary_nodes + 1)
     # Add edges of weight 0 between all pairs of boundary nodes
     G.add_edges_from((u, v, {"weight": 0}) for u, v in itertools.combinations(boundary_nodes, 2))
 
-
     # do the MWPM:
     matching = nx.algorithms.max_weight_matching(G, maxcardinality=True)
-
     matching_array = np.array(list(matching))
 
     # Create boolean masks for the first and second sets
@@ -51,11 +49,11 @@ def compute_mwpm_reward(edge_index, edge_weights, num_real_nodes, logical_class)
     num_left_edges = np.sum(valid_edges_mask)
     
     # get the predicted logical state:
-    predicted_state = num_real_nodes % 2
+    predicted_state = num_left_edges % 2
 
     # compare with logical state:
     correct_prediction = (predicted_state == logical_class)
     # Assign reward
     reward = 1 if correct_prediction else -1
     
-    return torch.tensor(reward, dtype=torch.float32)
+    return reward #torch.tensor(reward, dtype=torch.float32)
