@@ -54,8 +54,13 @@ __pycache__
 *.csv
 *.png
 *.yaml
+*.prof
 
 # python virtual environment
 venv_neural_matching/
 
 wandb/
+
+blossomV/
+
+ISAK/

@@ -1,6 +1,7 @@
 '''Package with functions for creating graph representations of syndromes.'''
 import numpy as np
 import torch
+from torch_geometric.data import Data
 
 def get_node_feature_matrix(syndrome):
     """
@@ -50,3 +51,33 @@ def get_edges(node_features):
     edge_attr = 1 / edge_attr ** 2
 
     return edge_index, edge_attr.reshape(-1, 1)
+
+def get_syndrome_graph(code, p):
+    """
+    Generates a syndrome graph from a given quantum error correction code and error probability.
+    Args:
+        code (RotatedCode): An instance of the RotatedCode class representing the quantum error correction code.
+        p (float): The probability of an error occurring.
+    Returns:
+        graph: A PyTorch Geometric Data object with node features, edge indices, edge attributes, and the parity of Z errors on the western edge as the label.
+               Returns None if there are no X stabilizers in the syndrome.
+    """
+    error = code.generate_error_chain(p)
+    eq_class = code.get_eq_class(error)
+    y = torch.tensor(eq_class[1], dtype=torch.float32) # the parity of Z errors on the western edge
+    syndrome = code.get_syndrome(error)
+    # syndrome = np.array([[0, 0, 0, 0, 0, 0],
+    #                      [0, 0, 0, 0, 0, 0],
+    #                      [0, 0, 0, 0, 1, 0],
+    #                      [0, 0, 0, 1, 0, 0],
+    #                      [0, 0, 0, 0, 0, 0],
+    #                      [0, 0, 0, 0, 0, 0]])
+    # check number of X stabilizers:
+    if np.sum(syndrome == 1) == 0:
+        return None
+    else:
+        node_features = get_node_feature_matrix(syndrome)
+        edge_index, edge_attr = get_edges(node_features)
+        graph = Data(x = node_features, edge_index = edge_index, edge_attr = edge_attr, y = y)
+    
+        return graph

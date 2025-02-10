@@ -7,20 +7,18 @@ class EdgeWeightGNN(nn.Module):
     '''
     A Graph Neural Network (GNN) for predicting edge weights based on node features and edge embeddings.
     This model uses graph convolution layers (GCNs) for node feature transformation and an MLP for edge embedding
-    to predict the edge weights, which are then sampled from a Gaussian distribution.
+    to predict the edge weights means of a Gaussian distribution.
 
     Attributes:
         graph_conv_layers (nn.ModuleList): A list of GraphConv layers applied sequentially to update node features.
         edge_mlp (nn.Sequential): A multi-layer perceptron (MLP) for processing edge embeddings to predict edge weights.
-        stddev (nn.Parameter): A learnable parameter representing the standard deviation of the Gaussian distribution for sampling.
     Args:
         node_feat_dim (int): The dimension of the input node features (e.g., feature size for each node).
         hidden_dim (int): The number of hidden units in each graph convolution layer.
         num_gcn_layers (int): The number of graph convolution layers to be stacked in the model.
-        stddev (float): The standard deviation for the Gaussian distribution used to sample edge weights.
     '''
 
-    def __init__(self, node_feat_dim = 4, hidden_dim = 8, num_gcn_layers = 2, stddev = 0.5):
+    def __init__(self, node_feat_dim = 4, hidden_dim = 8, num_gcn_layers = 2):
         super(EdgeWeightGNN, self).__init__()
 
         # GCN layers
@@ -35,8 +33,6 @@ class EdgeWeightGNN(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, 1))  # Output scalar edge weight
 
-        # Standard deviation for the Gaussian (can be a learnable parameter or fixed)
-        self.stddev = nn.Parameter(torch.tensor(stddev))
         
     def forward(self, x, edge_index, edge_weights):
         """
@@ -62,6 +58,11 @@ class EdgeWeightGNN(nn.Module):
         # Step 4: Add boundary edges connecting each node to two virtual nodes
         edge_index, edge_weights, x, num_real_nodes = self.add_boundary_edges(
                                                     edge_index, edge_weights, x)
+        # add boundary nodes (if n_real nodes odd, add an extra virtual node):
+        if num_real_nodes % 2 == 0:
+            num_boundary_nodes = 2 * num_real_nodes
+        else:
+            num_boundary_nodes = 2 * num_real_nodes + 1
         
         # Step 5: Compute edge embeddings
         row, col = edge_index  # Separate the two nodes of each edge
@@ -72,19 +73,9 @@ class EdgeWeightGNN(nn.Module):
 
         # Step 6: Predict edge weight mean
         edge_weights_mean = self.edge_mlp(edge_embedding).squeeze(-1)  # [num_edges]
-        # print("Mean of the edge weights:", edge_weights_mean)
-
-        # Step 7: Sample from the Gaussian distribution (mean, stddev)
-        epsilon = torch.randn_like(edge_weights_mean)  # Standard normal noise
-        sampled_edge_weights = edge_weights_mean + self.stddev * epsilon  # Sampled edge weights
-
-        # # Step 8: Ensure edges are in the (0,1) range
-        # sampled_edge_weights_0_1 = torch.sigmoid(sampled_edge_weights) 
-
-        # Compute log-probabilities for the REINFORCE update
-        log_probs = self.compute_log_probs(edge_weights_mean, sampled_edge_weights)#, sampled_edge_weights_0_1)
         
-        return edge_index, sampled_edge_weights, num_real_nodes, log_probs
+        return edge_index, edge_weights_mean,  num_real_nodes, num_boundary_nodes
+        
     
     def filter_nodes_and_edges(self, x, stabilizer_type, edge_index, edge_weights):
         """
@@ -163,9 +154,9 @@ class EdgeWeightGNN(nn.Module):
         left_edges = torch.stack([torch.arange(num_real_nodes), left_boundary_nodes], dim=0)
         right_edges = torch.stack([torch.arange(num_real_nodes), right_boundary_nodes], dim=0)
 
-        # Assign weights: left boundary edge = 1, right boundary edge = 1
+        # Assign weights: left boundary edge = 1, right boundary edge = -1
         left_weights = torch.ones((num_real_nodes, 1))  # Weight 1 for left boundary edges
-        right_weights = torch.ones((num_real_nodes, 1))  # Weight 1 for right boundary edges
+        right_weights = -torch.ones((num_real_nodes, 1))  # Weight -1 for right boundary edges
 
         # Extend node features for boundary nodes (copy features from corresponding real nodes)
         x_boundary = x  # Duplicate real node features for boundary nodes
@@ -176,23 +167,29 @@ class EdgeWeightGNN(nn.Module):
         edge_weights = torch.cat([edge_weights, left_weights, right_weights], dim=0)
 
         return edge_index, edge_weights, x, num_real_nodes
+    
 
+def sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev):
+    '''
+    Compute the log-probabilities of the sampled edge weights.
+    This is based on the Gaussian distribution with the predicted mean and stddev.
+    Args:
+        means: The predicted means from the GNN.
+        stdev: the standard deviation of the policy
+    Returns:
+        sampled_edge_weights: The sampled edge weights.
+        log_probs: The log-probabilities of the sampled edge weights
+    '''
+    num_edges = edge_weights_mean.shape[0]
+    # Expand edge weights mean to match the number of draws per sample
+    edge_weights_mean = edge_weights_mean.repeat(num_draws_per_sample, 1)
+    # Sample from the Gaussian distribution (mean, stddev)
+    with torch.no_grad():
+        epsilon = torch.randn((num_draws_per_sample, num_edges))  # Standard normal noise
+        sampled_edge_weights = edge_weights_mean + stddev * epsilon  # Sampled edge weights
+    # Compute log-probabilities for the REINFORCE update
+    # Log probability of the sampled value under the Gaussian distribution
+    log_probs = -0.5 * torch.log(2 * torch.pi * stddev**2) \
+                - (sampled_edge_weights - edge_weights_mean)**2 / (2 * stddev**2)
 
-    def compute_log_probs(self, means, sampled_edge_weights):
-        """
-        Compute the log-probabilities of the sampled edge weights.
-        This is based on the Gaussian distribution with the predicted mean and stddev.
-        
-        Args:
-            means: The predicted means from the GNN.
-            sampled_edge_weights: The sampled edge weights.
-            ((sampled_edge_weights_0_1: The sampled edge weights (after sigmoid).))
-
-        Returns:
-            log_probs: The log-probabilities of the sampled edge weights (after sigmoid)
-        """
-        # Log probability of the sampled value under the Gaussian distribution
-        log_probs = -0.5 * torch.log(2 * torch.pi * self.stddev**2) - (sampled_edge_weights - means)**2 / (2 * self.stddev**2)
-        # # the correction from the sigmoid transformation:
-        # log_probs -= torch.log(sampled_edge_weights_0_1 * (1 - sampled_edge_weights_0_1))
-        return log_probs
+    return sampled_edge_weights, log_probs
