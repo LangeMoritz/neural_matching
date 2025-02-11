@@ -30,8 +30,9 @@ def main():
     num_epochs = 10000
 
     for epoch in range(num_epochs):
-        epoch_loss = []
-        epoch_reward = []
+        epoch_loss = 0
+        epoch_reward = 0
+        optimizer.zero_grad()
         for i in range(num_samples):  # Draw multiple samples per epoch
             data = graph_list[i]
             all_log_probs = []
@@ -43,7 +44,7 @@ def main():
             # sampled_edge_weights = torch.sigmoid(sampled_edge_weights)
             for j in range(num_draws_per_sample):
                 edge_weights_j = sampled_edge_weights[j, :]
-                reward, matching = compute_mwpm_reward(edge_index, edge_weights_j, num_real_nodes,num_boundary_nodes, data.y)
+                reward = compute_mwpm_reward(edge_index, edge_weights_j, num_real_nodes,num_boundary_nodes, data.y)
                 # Store log-probabilities and rewards
                 all_log_probs.append(log_probs[j])
                 all_rewards.append(reward)
@@ -56,15 +57,13 @@ def main():
             # Compute the REINFORCE loss for each edge
             loss_per_sample = -torch.mean(loss_per_draw)  # Shape: (1,)
             mean_reward_per_sample = torch.mean(all_rewards)
-            optimizer.zero_grad()
-            loss_per_sample.backward()  # Provide gradient for each sample
-            optimizer.step()
+            loss_per_sample.backward()  # Accumulate gradients
+            epoch_loss += loss_per_sample.item()
+            epoch_reward += mean_reward_per_sample.item()
 
-            # mean over all samples
-            epoch_reward.append(mean_reward_per_sample.item())
-            epoch_loss.append(loss_per_sample.mean().item())
-        epoch_loss = torch.tensor(epoch_loss).mean()
-        epoch_reward = torch.tensor(epoch_reward).mean()
+        optimizer.step()  # Perform a single optimization step after accumulating gradients
+        epoch_loss /= num_samples
+        epoch_reward /= num_samples
         # Print training progress
         if epoch % 500 == 0:
             print(f'Epoch [{epoch}/{num_epochs}], Loss: {epoch_loss:.4f}, Mean Reward: {epoch_reward:.4f}')

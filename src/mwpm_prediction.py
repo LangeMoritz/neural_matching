@@ -54,7 +54,7 @@ def compute_mwpm_reward(edge_index, edge_weights, num_real_nodes, num_boundary_n
     # Assign reward
     reward = 1 if correct_prediction else -1
     
-    return reward, matching
+    return reward
 
 def compute_mwpm_reward_networkx(edge_index, edge_weights, num_real_nodes, num_boundary_nodes, logical_class):
     """
