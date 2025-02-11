@@ -189,7 +189,8 @@ def sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev
         sampled_edge_weights = edge_weights_mean + stddev * epsilon  # Sampled edge weights
     # Compute log-probabilities for the REINFORCE update
     # Log probability of the sampled value under the Gaussian distribution
-    log_probs = -0.5 * torch.log(2 * torch.pi * stddev**2) \
-                - (sampled_edge_weights - edge_weights_mean)**2 / (2 * stddev**2)
+    log_probs = - (sampled_edge_weights - edge_weights_mean)**2 / (2 * stddev**2)
+    # Sum over all edge weights (shape (num_draws_per_sample,))
+    log_probs = torch.sum(log_probs, dim=1)  
 
     return sampled_edge_weights, log_probs
