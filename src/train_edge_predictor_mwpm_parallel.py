@@ -1,20 +1,22 @@
 from rotated_surface_code import RotatedCode
 from graph_representation import get_syndrome_graph
-from mwpm_prediction import compute_mwpm_reward
+from mwpm_prediction import compute_mwpm_reward_parallel
 from gnn_model import EdgeWeightGNN, sample_weights_get_log_probs
-from utils import test_model, save_checkpoint
+from utils import test_model
 import torch
-from datetime import datetime
-# python -m cProfile -o output.prof src/train_edge_predictor.py
-# snakeviz output.prof
+import numpy as np
+from multiprocessing import Pool, cpu_count
+
+# python -m cProfile -o output_mwpm_parallel.prof src/train_edge_predictor_mwpm_parallel.py
+# snakeviz output_mwpm_parallel.prof
 
 def main():
     p = 0.1
     d = 5
     code = RotatedCode(d)
 
-    num_samples_per_epoch = 1000
-    num_draws_per_sample = 100
+    num_samples_per_epoch = 100
+    num_draws_per_sample = 10
     tot_num_samples = 0
     stddev = torch.tensor(0.1, dtype=torch.float32)
 
@@ -22,25 +24,9 @@ def main():
     model = EdgeWeightGNN()
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    num_epochs = 2
 
-    # Check for checkpoint and load if available
-    # generate a unique name to not overwrite other models
-    name = ("d_" + str(d) + "_p_" + "0p1")
-    # current_datetime = datetime.now().strftime("%y%m%d-%H%M%S")
-    # name = name + current_datetime
-    checkpoint_path = 'saved_models/' + name + '.pt'
-    start_epoch = 0
-    try:
-        checkpoint = torch.load(checkpoint_path, weights_only=True)
-        start_epoch = checkpoint['epoch']  # Get the epoch from checkpoint
-        model.load_state_dict(checkpoint['model_state_dict'])  # Load model weights
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])  # Load optimizer state
-        print(f"Checkpoint loaded, continuing from epoch {start_epoch}")
-    except FileNotFoundError:
-        print("No checkpoint found, starting from scratch.")
-    num_epochs = start_epoch + 1000
-
-    for epoch in range(start_epoch, num_epochs):
+    for epoch in range(num_epochs):
         epoch_loss = 0
         epoch_reward = 0
         optimizer.zero_grad()
@@ -55,18 +41,24 @@ def main():
         for i in range(num_samples_per_epoch):  # Draw multiple samples per epoch
             data = graph_list[i]
             all_log_probs = []
-            all_rewards = []
             # Forward pass: Get sampled edge weights and their log-probabilities
             edge_index, edge_weights_mean, num_real_nodes, num_boundary_nodes = \
                 model(data.x, data.edge_index, data.edge_attr)
             sampled_edge_weights, log_probs = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev)
-            # sampled_edge_weights = torch.sigmoid(sampled_edge_weights)
+
+            edge_index = edge_index.detach().numpy()
+            sampled_edge_weights = sampled_edge_weights.detach().numpy()
+
+            # create list of arguments for the multiprocesses 
+            repeated_arguments = []
             for j in range(num_draws_per_sample):
-                edge_weights_j = sampled_edge_weights[j, :]
-                reward = compute_mwpm_reward(edge_index, edge_weights_j, num_real_nodes,num_boundary_nodes, data.y)
-                # Store log-probabilities and rewards
+                y_numpy = data.y.detach().numpy()
+                repeated_arguments.append((edge_index, sampled_edge_weights[j, :], num_real_nodes, num_boundary_nodes, y_numpy))
                 all_log_probs.append(log_probs[j])
-                all_rewards.append(reward)
+            # compute rewards for all draws in parallel:
+            with Pool(processes = (cpu_count() - 1)) as pool:
+                all_rewards = pool.starmap(compute_mwpm_reward_parallel, repeated_arguments)
+            
             # Stack log-probs and rewards for averaging
             all_log_probs = torch.stack(all_log_probs)  # Shape: (num_draws_per_sample,)
             all_rewards = torch.tensor(all_rewards, dtype=torch.float32)            # Shape: (num_draws_per_sample,)
@@ -91,8 +83,5 @@ def main():
         if epoch % 1 == 0:
             print(f'Epoch [{epoch}/{num_epochs}], Loss: {epoch_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}')
 
-        # Save the checkpoint after the current epoch
-        save_checkpoint(model, optimizer, epoch, epoch_loss, train_acc, checkpoint_path)
 if __name__ == "__main__":
     main()
-

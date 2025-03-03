@@ -5,6 +5,16 @@ import yaml
 import torch
 from src.mwpm_prediction import compute_mwpm_reward
 
+# Save the model state, optimizer state after each epoch
+def save_checkpoint(model, optimizer, epoch, epoch_loss, train_acc, checkpoint_path):
+    checkpoint = {
+        'epoch': epoch + 1,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'epoch_loss': epoch_loss,
+        'train_acc': train_acc
+    }
+    torch.save(checkpoint, checkpoint_path)
 
 def parse_yaml(yaml_config):
     
@@ -55,18 +65,21 @@ def parse_yaml(yaml_config):
 
 def test_model(model, num_samples, graph_list):
     '''
-    Test the model by generating new samples and computing the average reward.
+    Test the model by generating new samples and computing the average accuracy.
     Args:
         model: The trained GNN model.
         num_samples: The number of samples to generate.
     Returns:
-        mean_reward: The average reward over the generated samples.
+        mean_accuracy: The average accuracy over the generated samples.
     '''
-    mean_reward = 0
+    mean_accuracy = 0
     for i in range(num_samples):
         data = graph_list[i]
-        edge_index, edge_weights_mean, num_real_nodes = model(data.x, data.edge_index, data.edge_attr)
-        reward = compute_mwpm_reward(edge_index, edge_weights_mean, num_real_nodes, data.y)
-        mean_reward += reward
-    mean_reward /= num_samples
-    return mean_reward
+        edge_index, edge_weights_mean, num_real_nodes, num_boundary_nodes = \
+                model(data.x, data.edge_index, data.edge_attr)
+        reward = compute_mwpm_reward(edge_index, edge_weights_mean, num_real_nodes,num_boundary_nodes, data.y)
+        accuracy = (reward + 1) / 2
+    
+        mean_accuracy += accuracy
+    mean_accuracy /= num_samples
+    return mean_accuracy
