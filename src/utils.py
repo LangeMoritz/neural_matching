@@ -5,16 +5,27 @@ import yaml
 import torch
 from src.mwpm_prediction import compute_mwpm_reward
 
-# Save the model state, optimizer state after each epoch
-def save_checkpoint(model, optimizer, epoch, epoch_loss, train_acc, checkpoint_path):
+# Save the entire training history along with model and optimizer states
+def save_checkpoint(model, optimizer, epoch, epoch_loss, train_acc, test_acc, checkpoint_path):
+    try:
+        # Load existing checkpoint if it exists
+        checkpoint = torch.load(checkpoint_path, weights_only=False)
+        history = checkpoint.get('history', [])
+    except (FileNotFoundError, RuntimeError):
+        history = []
+
+    # Append the new epoch data
+    history.append({'epoch': epoch + 1, 'epoch_loss': epoch_loss, 'train_acc': train_acc, 'test_acc': test_acc})
+
+    # Save updated checkpoint
     checkpoint = {
         'epoch': epoch + 1,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-        'epoch_loss': epoch_loss,
-        'train_acc': train_acc
+        'history': history
     }
     torch.save(checkpoint, checkpoint_path)
+
 
 def parse_yaml(yaml_config):
     

@@ -69,8 +69,8 @@ def compute_mwpm_reward(edge_index, edge_weights, num_real_nodes, num_boundary_n
     
     Note: The virtual nodes on the western boundary have indices n, ... 2*n - 1
     """
-    edge_index = edge_index.detach().numpy()
-    edge_weights = edge_weights.detach().numpy()
+    edge_index = edge_index.cpu().detach().numpy()
+    edge_weights = edge_weights.cpu().detach().numpy()
 
     # Add edges with weights using a generator
     edges = {tuple(x): w for x, w in zip(edge_index.T, edge_weights)}

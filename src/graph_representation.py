@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from torch_geometric.data import Data
 
-def get_node_feature_matrix(syndrome):
+def get_node_feature_matrix(syndrome, device):
     """
     Creates a node feature matrix of dimensions 
     (number_of_defects, number_of_node_features), where each row
@@ -29,14 +29,14 @@ def get_node_feature_matrix(syndrome):
     # Get defects (non_zero entries), defect indices (indices of defects in flattened syndrome)
     # and defect_indices_tuple (indices in 2D syndrome) of the syndrome matrix
     
-    return torch.from_numpy(node_features)
+    return torch.from_numpy(node_features).to(device)
 
-def get_edges(node_features):
+def get_edges(node_features, device):
     '''Creates edges between all nodes with supremum norm as edge weight'''
     num_nodes = node_features.shape[0]
 
     # Fully connected graph: Generate edge list
-    edge_index = torch.combinations(torch.arange(num_nodes, dtype=torch.int64), r=2).T  # Unique pairs (u, v)
+    edge_index = torch.combinations(torch.arange(num_nodes, dtype=torch.int64, device=device), r=2).T  # Unique pairs (u, v)
     # Duplicate each edge as (u, v) and (v, u)
     edge_index = torch.cat([edge_index, edge_index.flip(0)], dim=1)
     # compute the distances between the nodes (start node - end node):
@@ -52,7 +52,7 @@ def get_edges(node_features):
 
     return edge_index, edge_attr.reshape(-1, 1)
 
-def get_syndrome_graph(code, p):
+def get_syndrome_graph(code, p, device):
     """
     Generates a syndrome graph from a given quantum error correction code and error probability.
     Args:
@@ -64,7 +64,7 @@ def get_syndrome_graph(code, p):
     """
     error = code.generate_error_chain(p)
     eq_class = code.get_eq_class(error)
-    y = torch.tensor(eq_class[1], dtype=torch.float32) # the parity of Z errors on the western edge
+    y = torch.tensor(eq_class[1], dtype=torch.float32, device=device) # the parity of Z errors on the western edge
     syndrome = code.get_syndrome(error)
     # syndrome = np.array([[0, 0, 0, 0, 0, 0],
     #                      [0, 0, 0, 0, 0, 0],
@@ -76,8 +76,8 @@ def get_syndrome_graph(code, p):
     if np.sum(syndrome == 1) == 0:
         return None
     else:
-        node_features = get_node_feature_matrix(syndrome)
-        edge_index, edge_attr = get_edges(node_features)
+        node_features = get_node_feature_matrix(syndrome, device)
+        edge_index, edge_attr = get_edges(node_features, device)
         graph = Data(x = node_features, edge_index = edge_index, edge_attr = edge_attr, y = y)
     
         return graph

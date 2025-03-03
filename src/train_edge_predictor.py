@@ -9,19 +9,34 @@ from datetime import datetime
 # snakeviz output.prof
 
 def main():
+    device = torch.device("mps") 
     p = 0.1
-    d = 5
+    d = 3
     code = RotatedCode(d)
-
+    print(f'Training d = {d}.')
     num_samples_per_epoch = 1000
     num_draws_per_sample = 100
     tot_num_samples = 0
-    stddev = torch.tensor(0.1, dtype=torch.float32)
+    test_set_size = int(1e4)
+    stddev = torch.tensor(0.1, dtype=torch.float32, device=device)
+    lr = 1e-4
 
+    # initiate the dataset:
+    test_set = []
+    test_n_trivials = 0
+    for _ in range(test_set_size):
+        graph = get_syndrome_graph(code, p, device)
+        if not graph == None:
+           test_set.append(graph)
+        else: 
+            test_n_trivials += 1
+    n_nontrivial_test_samples = len(test_set)
+    n_trivial_test_samples = test_set_size - n_nontrivial_test_samples
 
     model = EdgeWeightGNN()
+    model = model.to(device)
     model.train()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
@@ -35,7 +50,7 @@ def main():
         start_epoch = checkpoint['epoch']  # Get the epoch from checkpoint
         model.load_state_dict(checkpoint['model_state_dict'])  # Load model weights
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])  # Load optimizer state
-        print(f"Checkpoint loaded, continuing from epoch {start_epoch}")
+        print(f"Checkpoint loaded, continuing from epoch {start_epoch}.")
     except FileNotFoundError:
         print("No checkpoint found, starting from scratch.")
     num_epochs = start_epoch + 1000
@@ -48,7 +63,7 @@ def main():
         # initiate the dataset:
         graph_list = []
         while len(graph_list) < num_samples_per_epoch:
-            graph = get_syndrome_graph(code, p)
+            graph = get_syndrome_graph(code, p, device)
             if not graph == None:
                 graph_list.append(graph)
 
@@ -59,7 +74,7 @@ def main():
             # Forward pass: Get sampled edge weights and their log-probabilities
             edge_index, edge_weights_mean, num_real_nodes, num_boundary_nodes = \
                 model(data.x, data.edge_index, data.edge_attr)
-            sampled_edge_weights, log_probs = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev)
+            sampled_edge_weights, log_probs = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev, device)
             # sampled_edge_weights = torch.sigmoid(sampled_edge_weights)
             for j in range(num_draws_per_sample):
                 edge_weights_j = sampled_edge_weights[j, :]
@@ -69,7 +84,7 @@ def main():
                 all_rewards.append(reward)
             # Stack log-probs and rewards for averaging
             all_log_probs = torch.stack(all_log_probs)  # Shape: (num_draws_per_sample,)
-            all_rewards = torch.tensor(all_rewards, dtype=torch.float32)            # Shape: (num_draws_per_sample,)
+            all_rewards = torch.tensor(all_rewards, dtype=torch.float32, device=device)            # Shape: (num_draws_per_sample,)
             # The loss per draw and per edge is the log-probability times the reward
             loss_per_draw = all_log_probs * all_rewards  # Shape: (num_draws_per_sample, )
 
@@ -87,12 +102,16 @@ def main():
         tot_num_samples += num_samples_per_epoch
 
         train_acc = test_model(model, num_samples_per_epoch, graph_list)
+
+        test_acc_nontrivial = test_model(model, n_nontrivial_test_samples, test_set)
+        num_corr_nontrivial = test_acc_nontrivial * n_nontrivial_test_samples
+        test_acc = (num_corr_nontrivial + n_trivial_test_samples) / test_set_size
         # Print training progress
         if epoch % 1 == 0:
-            print(f'Epoch [{epoch}/{num_epochs}], Loss: {epoch_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}')
+            print(f'Epoch [{epoch}/{num_epochs}], Loss: {epoch_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}')
 
         # Save the checkpoint after the current epoch
-        save_checkpoint(model, optimizer, epoch, epoch_loss, train_acc, checkpoint_path)
+        save_checkpoint(model, optimizer, epoch, epoch_loss, train_acc, test_acc, checkpoint_path)
 if __name__ == "__main__":
     main()
 
