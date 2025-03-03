@@ -9,7 +9,6 @@ from datetime import datetime
 # snakeviz output.prof
 
 def main():
-    device = torch.device("mps") 
     p = 0.1
     d = 3
     code = RotatedCode(d)
@@ -18,14 +17,14 @@ def main():
     num_draws_per_sample = 100
     tot_num_samples = 0
     test_set_size = int(1e4)
-    stddev = torch.tensor(0.1, dtype=torch.float32, device=device)
-    lr = 1e-4
+    stddev = torch.tensor(0.1, dtype=torch.float32)
+    lr = 1e-5
 
     # initiate the dataset:
     test_set = []
     test_n_trivials = 0
     for _ in range(test_set_size):
-        graph = get_syndrome_graph(code, p, device)
+        graph = get_syndrome_graph(code, p)
         if not graph == None:
            test_set.append(graph)
         else: 
@@ -34,7 +33,6 @@ def main():
     n_trivial_test_samples = test_set_size - n_nontrivial_test_samples
 
     model = EdgeWeightGNN()
-    model = model.to(device)
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
@@ -63,7 +61,7 @@ def main():
         # initiate the dataset:
         graph_list = []
         while len(graph_list) < num_samples_per_epoch:
-            graph = get_syndrome_graph(code, p, device)
+            graph = get_syndrome_graph(code, p)
             if not graph == None:
                 graph_list.append(graph)
 
@@ -74,7 +72,7 @@ def main():
             # Forward pass: Get sampled edge weights and their log-probabilities
             edge_index, edge_weights_mean, num_real_nodes, num_boundary_nodes = \
                 model(data.x, data.edge_index, data.edge_attr)
-            sampled_edge_weights, log_probs = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev, device)
+            sampled_edge_weights, log_probs = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev)
             # sampled_edge_weights = torch.sigmoid(sampled_edge_weights)
             for j in range(num_draws_per_sample):
                 edge_weights_j = sampled_edge_weights[j, :]
@@ -84,7 +82,7 @@ def main():
                 all_rewards.append(reward)
             # Stack log-probs and rewards for averaging
             all_log_probs = torch.stack(all_log_probs)  # Shape: (num_draws_per_sample,)
-            all_rewards = torch.tensor(all_rewards, dtype=torch.float32, device=device)            # Shape: (num_draws_per_sample,)
+            all_rewards = torch.tensor(all_rewards, dtype=torch.float32)            # Shape: (num_draws_per_sample,)
             # The loss per draw and per edge is the log-probability times the reward
             loss_per_draw = all_log_probs * all_rewards  # Shape: (num_draws_per_sample, )
 

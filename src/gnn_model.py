@@ -33,9 +33,7 @@ class EdgeWeightGNN(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, 1))  # Output scalar edge weight
 
-    def get_device(self):
-        return next(self.parameters()).device
-    
+        
     def forward(self, x, edge_index, edge_weights):
         """
         Args:
@@ -45,9 +43,6 @@ class EdgeWeightGNN(nn.Module):
         Returns:
             edge_weights (torch.Tensor): Predicted edge weights of shape [num_edges].
         """
-        # get the device the model is running at:
-        self.device = self.get_device()
-
         # store the stabilizer type of the nodes
         stabilizer_type = x[:, -2:]
         # Step 1: Apply GCN layers to update node embeddings
@@ -101,8 +96,9 @@ class EdgeWeightGNN(nn.Module):
         valid_nodes = (stabilizer_type[:, 0] == 1) & (stabilizer_type[:, 1] == 0)
 
         # Step 2: Create a mapping from old node indices to new indices
-        new_node_ids = torch.full((x.shape[0],), -1, dtype=torch.long, device=self.device)  # -1 for removed nodes
-        new_node_ids[valid_nodes] = torch.arange(valid_nodes.sum(), device=self.device)  # Renumber valid nodes
+        new_node_ids = torch.full((x.shape[0],), -1, dtype=torch.long)  # -1 for removed nodes
+        new_node_ids[valid_nodes] = torch.arange(valid_nodes.sum())  # Renumber valid nodes
+
         # Step 3: Filter node features
         new_x = x[valid_nodes]  # Keep only valid nodes
 
@@ -151,16 +147,16 @@ class EdgeWeightGNN(nn.Module):
         num_real_nodes = x.shape[0]
 
         # Create unique boundary node indices
-        left_boundary_nodes = torch.arange(num_real_nodes, num_real_nodes * 2, device=self.device)  # Left boundary
-        right_boundary_nodes = torch.arange(num_real_nodes * 2, num_real_nodes * 3, device=self.device)  # Right boundary
+        left_boundary_nodes = torch.arange(num_real_nodes, num_real_nodes * 2)  # Left boundary
+        right_boundary_nodes = torch.arange(num_real_nodes * 2, num_real_nodes * 3)  # Right boundary
 
         # Create edges: (real_node -> left_boundary), (real_node -> right_boundary)
-        left_edges = torch.stack([torch.arange(num_real_nodes, device=self.device), left_boundary_nodes], dim=0)
-        right_edges = torch.stack([torch.arange(num_real_nodes, device=self.device), right_boundary_nodes], dim=0)
+        left_edges = torch.stack([torch.arange(num_real_nodes), left_boundary_nodes], dim=0)
+        right_edges = torch.stack([torch.arange(num_real_nodes), right_boundary_nodes], dim=0)
 
         # Assign weights: left boundary edge = 1, right boundary edge = -1
-        left_weights = torch.ones((num_real_nodes, 1), device=self.device)  # Weight 1 for left boundary edges
-        right_weights = -torch.ones((num_real_nodes, 1), device=self.device)  # Weight -1 for right boundary edges
+        left_weights = torch.ones((num_real_nodes, 1))  # Weight 1 for left boundary edges
+        right_weights = -torch.ones((num_real_nodes, 1))  # Weight -1 for right boundary edges
 
         # Extend node features for boundary nodes (copy features from corresponding real nodes)
         x_boundary = x  # Duplicate real node features for boundary nodes
@@ -173,7 +169,7 @@ class EdgeWeightGNN(nn.Module):
         return edge_index, edge_weights, x, num_real_nodes
     
 
-def sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev, device):
+def sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev):
     '''
     Compute the log-probabilities of the sampled edge weights.
     This is based on the Gaussian distribution with the predicted mean and stddev.
@@ -189,7 +185,7 @@ def sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev
     edge_weights_mean = edge_weights_mean.repeat(num_draws_per_sample, 1)
     # Sample from the Gaussian distribution (mean, stddev)
     with torch.no_grad():
-        epsilon = torch.randn((num_draws_per_sample, num_edges), device=device)  # Standard normal noise
+        epsilon = torch.randn((num_draws_per_sample, num_edges))  # Standard normal noise
         sampled_edge_weights = edge_weights_mean + stddev * epsilon  # Sampled edge weights
     # Compute log-probabilities for the REINFORCE update
     # Log probability of the sampled value under the Gaussian distribution
