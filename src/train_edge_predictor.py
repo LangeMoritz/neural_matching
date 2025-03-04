@@ -9,8 +9,8 @@ from datetime import datetime
 # snakeviz output.prof
 
 def main():
-    p = 0.1
-    d = 3
+    p = 0.05
+    d = 7
     code = RotatedCode(d)
     print(f'Training d = {d}.')
     num_samples_per_epoch = 1000
@@ -18,7 +18,7 @@ def main():
     tot_num_samples = 0
     test_set_size = int(1e4)
     stddev = torch.tensor(0.1, dtype=torch.float32)
-    lr = 1e-5
+    lr = 1e-3
 
     # initiate the dataset:
     test_set = []
@@ -38,10 +38,10 @@ def main():
 
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = ("d_" + str(d) + "_p_" + "0p1")
+    name = ("d_" + str(d) + "_p_" + "0p5")
     # current_datetime = datetime.now().strftime("%y%m%d-%H%M%S")
     # name = name + current_datetime
-    checkpoint_path = 'saved_models/' + name + '.pt'
+    checkpoint_path = 'saved_models/gcn_4_64_64_mlp_129_256_64/' + name + '.pt'
     start_epoch = 0
     try:
         checkpoint = torch.load(checkpoint_path, weights_only=True)
@@ -51,7 +51,10 @@ def main():
         print(f"Checkpoint loaded, continuing from epoch {start_epoch}.")
     except FileNotFoundError:
         print("No checkpoint found, starting from scratch.")
-    num_epochs = start_epoch + 1000
+    num_epochs = start_epoch + 500
+    # Learning rate:
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
 
     for epoch in range(start_epoch, num_epochs):
         epoch_loss = 0
@@ -84,6 +87,7 @@ def main():
             all_log_probs = torch.stack(all_log_probs)  # Shape: (num_draws_per_sample,)
             all_rewards = torch.tensor(all_rewards, dtype=torch.float32)            # Shape: (num_draws_per_sample,)
             # The loss per draw and per edge is the log-probability times the reward
+            # TODO: it's not really the loss, it's actually the rewards times the log of the probs 
             loss_per_draw = all_log_probs * all_rewards  # Shape: (num_draws_per_sample, )
 
             # Compute the REINFORCE loss for each edge

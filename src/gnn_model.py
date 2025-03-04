@@ -29,7 +29,9 @@ class EdgeWeightGNN(nn.Module):
 
         # Edge embedding MLP
         self.edge_mlp = nn.Sequential(
-            nn.Linear(2 * hidden_dim + 1, hidden_dim),
+            nn.Linear(2 * hidden_dim + 1, 4 * hidden_dim),
+            nn.ReLU(),
+            nn.Linear(4 * hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1))  # Output scalar edge weight
 

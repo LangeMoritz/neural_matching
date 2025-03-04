@@ -84,13 +84,14 @@ def test_model(model, num_samples, graph_list):
         mean_accuracy: The average accuracy over the generated samples.
     '''
     mean_accuracy = 0
-    for i in range(num_samples):
-        data = graph_list[i]
-        edge_index, edge_weights_mean, num_real_nodes, num_boundary_nodes = \
-                model(data.x, data.edge_index, data.edge_attr)
-        reward = compute_mwpm_reward(edge_index, edge_weights_mean, num_real_nodes,num_boundary_nodes, data.y)
-        accuracy = (reward + 1) / 2
-    
-        mean_accuracy += accuracy
-    mean_accuracy /= num_samples
+    with torch.no_grad():
+        for i in range(num_samples):
+            data = graph_list[i]
+            edge_index, edge_weights_mean, num_real_nodes, num_boundary_nodes = \
+                    model(data.x, data.edge_index, data.edge_attr)
+            reward = compute_mwpm_reward(edge_index, edge_weights_mean, num_real_nodes,num_boundary_nodes, data.y)
+            accuracy = (reward + 1) / 2
+
+            mean_accuracy += accuracy
+        mean_accuracy /= num_samples
     return mean_accuracy
