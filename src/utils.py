@@ -6,7 +6,7 @@ import torch
 from src.mwpm_prediction import compute_mwpm_reward
 
 # Save the entire training history along with model and optimizer states
-def save_checkpoint(model, optimizer, epoch, epoch_loss, train_acc, test_acc, checkpoint_path):
+def save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, test_acc, checkpoint_path):
     try:
         # Load existing checkpoint if it exists
         checkpoint = torch.load(checkpoint_path, weights_only=False)
@@ -15,7 +15,7 @@ def save_checkpoint(model, optimizer, epoch, epoch_loss, train_acc, test_acc, ch
         history = []
 
     # Append the new epoch data
-    history.append({'epoch': epoch + 1, 'epoch_loss': epoch_loss, 'train_acc': train_acc, 'test_acc': test_acc})
+    history.append({'epoch': epoch + 1, 'epoch_reward': epoch_reward, 'train_acc': train_acc, 'test_acc': test_acc})
 
     # Save updated checkpoint
     checkpoint = {
