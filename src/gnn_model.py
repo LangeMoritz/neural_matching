@@ -33,8 +33,8 @@ class EdgeWeightGNN(nn.Module):
             nn.ReLU(),
             nn.Linear(4 * hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, 1))  # Output scalar edge weight
-
+            nn.Linear(hidden_dim, 1),  # Output scalar edge weight
+            nn.Sigmoid())
         
     def forward(self, x, edge_index, edge_weights):
         """
@@ -189,9 +189,13 @@ def sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev
     with torch.no_grad():
         epsilon = torch.randn((num_draws_per_sample, num_edges))  # Standard normal noise
         sampled_edge_weights = edge_weights_mean + stddev * epsilon  # Sampled edge weights
+    # sigmoid:
+    sampled_edge_weights_sigmoid = torch.sigmoid(sampled_edge_weights)
     # Compute log-probabilities for the REINFORCE update
     # Log probability of the sampled value under the Gaussian distribution
     log_probs = - (sampled_edge_weights - edge_weights_mean)**2 / (2 * stddev**2)
+    # Jacobian correction:
+    log_probs -= torch.log(sampled_edge_weights_sigmoid * (1 - sampled_edge_weights_sigmoid))
     # Sum over all edge weights (shape (num_draws_per_sample,))
     log_probs = torch.sum(log_probs, dim=1)  
 

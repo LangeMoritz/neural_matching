@@ -10,15 +10,15 @@ from datetime import datetime
 
 def main():
     p = 0.05
-    d = 11
+    d = 3
     code = RotatedCode(d)
     print(f'Training d = {d}.')
-    num_samples_per_epoch = 10000
+    num_samples_per_epoch = 1000
     num_draws_per_sample = 100
     tot_num_samples = 0
     test_set_size = int(1e4)
     stddev = torch.tensor(0.1, dtype=torch.float32)
-    lr = 1e-3
+    lr = 1e-4
 
     # initiate the dataset:
     test_set = []
@@ -38,10 +38,10 @@ def main():
 
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = ("d_" + str(d) + "_p_" + "0p5")
+    name = ("d_" + str(d) + "_p_" + "0p5_sigmoid_lr_1e_4")
     # current_datetime = datetime.now().strftime("%y%m%d-%H%M%S")
     # name = name + current_datetime
-    checkpoint_path = 'saved_models/gcn_4_64_64_mlp_129_256_64/' + name + '.pt'
+    checkpoint_path = 'saved_models/gcn_4_64_64_mlp_129_256_64_sigmoid/' + name + '.pt'
     start_epoch = 0
     try:
         checkpoint = torch.load(checkpoint_path, weights_only=True)
@@ -51,7 +51,7 @@ def main():
         print(f"Checkpoint loaded, continuing from epoch {start_epoch}.")
     except FileNotFoundError:
         print("No checkpoint found, starting from scratch.")
-    num_epochs = start_epoch + 1
+    num_epochs = start_epoch + 5000
     # Learning rate:
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
@@ -67,9 +67,7 @@ def main():
             graph = get_syndrome_graph(code, p)
             if not graph == None:
                 graph_list.append(graph)
-        mini = 0
-        maxi = 0
-        meani = 0
+
         for i in range(num_samples_per_epoch):  # Draw multiple samples per epoch
             data = graph_list[i]
             all_log_probs = []
@@ -77,51 +75,45 @@ def main():
             # Forward pass: Get sampled edge weights and their log-probabilities
             edge_index, edge_weights_mean, num_real_nodes, num_boundary_nodes = \
                 model(data.x, data.edge_index, data.edge_attr)
-            mini += torch.min(edge_weights_mean)/num_samples_per_epoch
-            maxi += torch.max(edge_weights_mean)/num_samples_per_epoch
-            meani += torch.mean(edge_weights_mean)/num_samples_per_epoch
-        print('max', maxi)
-        print('min', mini)
-        print('mean', meani)
-        #     sampled_edge_weights, log_probs = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev)
-        #     # sampled_edge_weights = torch.sigmoid(sampled_edge_weights)
-        #     for j in range(num_draws_per_sample):
-        #         edge_weights_j = sampled_edge_weights[j, :]
-        #         reward = compute_mwpm_reward(edge_index, edge_weights_j, num_real_nodes,num_boundary_nodes, data.y)
-        #         # Store log-probabilities and rewards
-        #         all_log_probs.append(log_probs[j])
-        #         all_rewards.append(reward)
-        #     # Stack log-probs and rewards for averaging
-        #     all_log_probs = torch.stack(all_log_probs)  # Shape: (num_draws_per_sample,)
-        #     all_rewards = torch.tensor(all_rewards, dtype=torch.float32) # Shape: (num_draws_per_sample,)
-        #     # The loss per draw and per edge is the log-probability times the reward
-        #     # TODO: it's not really the loss, it's actually the rewards times the log of the probs 
-        #     log_loss_per_draw = all_log_probs * all_rewards  # Shape: (num_draws_per_sample, )
+            sampled_edge_weights, log_probs = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev)
+            # sampled_edge_weights = torch.sigmoid(sampled_edge_weights)
+            for j in range(num_draws_per_sample):
+                edge_weights_j = sampled_edge_weights[j, :]
+                reward = compute_mwpm_reward(edge_index, edge_weights_j, num_real_nodes,num_boundary_nodes, data.y)
+                # Store log-probabilities and rewards
+                all_log_probs.append(log_probs[j])
+                all_rewards.append(reward)
+            # Stack log-probs and rewards for averaging
+            all_log_probs = torch.stack(all_log_probs)  # Shape: (num_draws_per_sample,)
+            all_rewards = torch.tensor(all_rewards, dtype=torch.float32) # Shape: (num_draws_per_sample,)
+            # The loss per draw and per edge is the log-probability times the reward
+            # TODO: it's not really the loss, it's actually the rewards times the log of the probs 
+            log_loss_per_draw = all_log_probs * all_rewards  # Shape: (num_draws_per_sample, )
 
-        #     # Compute the REINFORCE loss for each edge
-        #     # maximize the reward, so minimize - reward
-        #     log_loss_per_sample = -torch.mean(log_loss_per_draw)  # Shape: (1,)
-        #     mean_reward_per_sample = torch.mean(all_rewards)
-        #     log_loss_per_sample.backward()  # Accumulate gradients
-        #     epoch_log_loss += log_loss_per_sample.item()
-        #     epoch_reward += mean_reward_per_sample.item()
+            # Compute the REINFORCE loss for each edge
+            # maximize the reward, so minimize - reward
+            log_loss_per_sample = -torch.mean(log_loss_per_draw)  # Shape: (1,)
+            mean_reward_per_sample = torch.mean(all_rewards)
+            log_loss_per_sample.backward()  # Accumulate gradients
+            epoch_log_loss += log_loss_per_sample.item()
+            epoch_reward += mean_reward_per_sample.item()
 
-        # optimizer.step()  # Perform a single optimization step after accumulating gradients
-        # epoch_log_loss /= num_samples_per_epoch
-        # epoch_reward /= num_samples_per_epoch
-        # tot_num_samples += num_samples_per_epoch
+        optimizer.step()  # Perform a single optimization step after accumulating gradients
+        epoch_log_loss /= num_samples_per_epoch
+        epoch_reward /= num_samples_per_epoch
+        tot_num_samples += num_samples_per_epoch
 
-        # train_acc = test_model(model, num_samples_per_epoch, graph_list)
+        train_acc = test_model(model, num_samples_per_epoch, graph_list)
 
-        # test_acc_nontrivial = test_model(model, n_nontrivial_test_samples, test_set)
-        # num_corr_nontrivial = test_acc_nontrivial * n_nontrivial_test_samples
-        # test_acc = (num_corr_nontrivial + n_trivial_test_samples) / test_set_size
-        # # Print training progress
-        # if epoch % 1 == 0:
-        #     print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}')
+        test_acc_nontrivial = test_model(model, n_nontrivial_test_samples, test_set)
+        num_corr_nontrivial = test_acc_nontrivial * n_nontrivial_test_samples
+        test_acc = (num_corr_nontrivial + n_trivial_test_samples) / test_set_size
+        # Print training progress
+        if epoch % 1 == 0:
+            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}')
 
-        # # Save the checkpoint after the current epoch
-        # save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, test_acc, checkpoint_path)
+        # Save the checkpoint after the current epoch
+        save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, test_acc, checkpoint_path)
 if __name__ == "__main__":
     main()
 
