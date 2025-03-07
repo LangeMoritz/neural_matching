@@ -1,15 +1,19 @@
-from rotated_surface_code import RotatedCode
-from graph_representation import get_syndrome_graph
-from mwpm_prediction import compute_mwpm_reward
-from gnn_model import EdgeWeightGNN, sample_weights_get_log_probs
-from utils import test_model, save_checkpoint
+from src.get_stim_syndromes import initialize_simulations
+from src.mwpm_prediction import compute_mwpm_reward
+from src.gnn_model import EdgeWeightGNN, sample_weights_get_log_probs
+from src.utils import test_model, save_checkpoint
+from src.graph_representation_stim import get_syndrome_graph
 import torch
+from torch_geometric.data import Data
+import numpy as np
 
 def main():
-    p = 0.05
+    p = 0.001
     d = 3
-    code = RotatedCode(d)
-    print(f'Training d = {d}.')
+    d_t = d
+    compiled_sampler, syndrome_mask, detector_coordinates = initialize_simulations(d, d_t, p)
+
+    print(f'Training d = {d}, d_t = {d_t}.')
     num_samples_per_epoch = int(1e3)
     num_draws_per_sample = int(1e2)
     tot_num_samples = 0
@@ -21,7 +25,7 @@ def main():
     test_set = []
     test_n_trivials = 0
     for _ in range(test_set_size):
-        graph = get_syndrome_graph(code, p)
+        graph = get_syndrome_graph(compiled_sampler, syndrome_mask, detector_coordinates)
         if not graph == None:
            test_set.append(graph)
         else: 
@@ -35,8 +39,8 @@ def main():
 
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = ("d_" + str(d) + "_p_" + "0p05_reward_0")
-    checkpoint_path = 'saved_models/gcn_32_64_mlp_128_64_32/' + name + '.pt'
+    name = ("d_" + str(d) + "_d_t_" + str(d_t) + "_p_" + "0p05_reward_0")
+    checkpoint_path = 'saved_models/stim_gcn_32_64_mlp_128_64_32/' + name + '.pt'
     start_epoch = 0
     try:
         checkpoint = torch.load(checkpoint_path, weights_only=True)
@@ -46,7 +50,7 @@ def main():
         print(f"Checkpoint loaded, continuing from epoch {start_epoch}.")
     except FileNotFoundError:
         print("No checkpoint found, starting from scratch.")
-    num_epochs = start_epoch + 500
+    num_epochs = start_epoch + 5
     # Learning rate:
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
@@ -59,7 +63,7 @@ def main():
         # initiate the dataset:
         graph_list = []
         while len(graph_list) < num_samples_per_epoch:
-            graph = get_syndrome_graph(code, p)
+            graph = get_syndrome_graph(compiled_sampler, syndrome_mask, detector_coordinates)
             if not graph == None:
                 graph_list.append(graph)
 

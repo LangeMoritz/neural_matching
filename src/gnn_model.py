@@ -13,27 +13,36 @@ class EdgeWeightGNN(nn.Module):
         graph_conv_layers (nn.ModuleList): A list of GraphConv layers applied sequentially to update node features.
         edge_mlp (nn.Sequential): A multi-layer perceptron (MLP) for processing edge embeddings to predict edge weights.
     Args:
-        node_feat_dim (int): The dimension of the input node features (e.g., feature size for each node).
-        hidden_dim (int): The number of hidden units in each graph convolution layer.
-        num_gcn_layers (int): The number of graph convolution layers to be stacked in the model.
+        hidden_channels_GCN (list): The hidden units in each graph convolution layer.
+        hidden_channels_MLP (list): The hidden units in each dense layer.
     '''
-
-    def __init__(self, node_feat_dim = 4, hidden_dim = 64, num_gcn_layers = 2):
-        super(EdgeWeightGNN, self).__init__()
-
+    def __init__(
+        self,
+        n_node_features = 5,
+        hidden_channels_GCN=[32, 64],
+        hidden_channels_MLP=[128, 64, 32]):
+        # num_classes is 1 for each head
+        super().__init__()
         # GCN layers
-        self.graph_conv_layers = nn.ModuleList()
-        self.graph_conv_layers.append(GraphConv(node_feat_dim, hidden_dim))
-        for _ in range(num_gcn_layers - 1):
-            self.graph_conv_layers.append(GraphConv(hidden_dim, hidden_dim))
-
-        # Edge embedding MLP
-        self.edge_mlp = nn.Sequential(
-            nn.Linear(2 * hidden_dim + 1, 4 * hidden_dim),
-            nn.ReLU(),
-            nn.Linear(4 * hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),  # Output scalar edge weight
+        channels = [n_node_features] + hidden_channels_GCN
+        self.graph_conv_layers = nn.ModuleList(
+            [
+                GraphConv(in_channels, out_channels)
+                for (in_channels, out_channels) in zip(channels[:-1], channels[1:])
+            ])
+        # Edge embedding MLP:
+        self.edge_embedding_mlp = nn.Sequential(
+            nn.Linear(2 * hidden_channels_GCN[-1] + 1, hidden_channels_MLP[0]),
+            nn.ReLU())
+        # Dense layers
+        self.dense_layers = nn.ModuleList(
+            [
+                nn.Linear(in_channels, out_channels)
+                for (in_channels, out_channels) in zip(hidden_channels_MLP[:-1], hidden_channels_MLP[1:])
+            ])
+        # output followed by a sigmoid activation:
+        self.ouput = nn.Sequential(
+            nn.Linear(hidden_channels_MLP[-1], 1),
             nn.Sigmoid())
         
     def forward(self, x, edge_index, edge_weights):
@@ -74,8 +83,12 @@ class EdgeWeightGNN(nn.Module):
         edge_embedding = torch.cat([node_i, node_j, edge_weights], dim=-1)  # [num_edges, 2 * hidden_dim + 1]
 
         # Step 6: Predict edge weight mean
-        edge_weights_mean = self.edge_mlp(edge_embedding).squeeze(-1)  # [num_edges]
-        
+        edge_weights_mean = self.edge_embedding_mlp(edge_embedding)
+        for dense in self.dense_layers:
+            edge_weights_mean = F.relu(dense(edge_weights_mean))
+        # Step 7: Sigmoind activation to ensure edge weights are in [0, 1]
+        edge_weights_mean = self.ouput(edge_weights_mean)
+        edge_weights_mean = edge_weights_mean.squeeze(-1)  # [num_edges]
         return edge_index, edge_weights_mean,  num_real_nodes, num_boundary_nodes
         
     
@@ -189,14 +202,16 @@ def sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev
     with torch.no_grad():
         epsilon = torch.randn((num_draws_per_sample, num_edges))  # Standard normal noise
         sampled_edge_weights = edge_weights_mean + stddev * epsilon  # Sampled edge weights
-    # sigmoid:
-    sampled_edge_weights_sigmoid = torch.sigmoid(sampled_edge_weights)
     # Compute log-probabilities for the REINFORCE update
     # Log probability of the sampled value under the Gaussian distribution
     log_probs = - (sampled_edge_weights - edge_weights_mean)**2 / (2 * stddev**2)
-    # Jacobian correction:
-    log_probs -= torch.log(sampled_edge_weights_sigmoid * (1 - sampled_edge_weights_sigmoid))
+
+    # sigmoid:
+    # sampled_edge_weights_sigmoid = torch.sigmoid(sampled_edge_weights)
+    # # Jacobian correction:
+    # log_probs -= torch.log(sampled_edge_weights_sigmoid * (1 - sampled_edge_weights_sigmoid))
+
     # Sum over all edge weights (shape (num_draws_per_sample,))
     log_probs = torch.sum(log_probs, dim=1)  
 
-    return sampled_edge_weights, log_probs
+    return sampled_edge_weights, log_probs, # sampled_edge_weights_sigmoid

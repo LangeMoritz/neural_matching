@@ -5,12 +5,11 @@ from src.gnn_model import EdgeWeightGNN, sample_weights_get_log_probs
 from src.utils import test_model, save_checkpoint
 import torch
 import numpy as np
-# python -m cProfile -o output.prof src/train_edge_predictor.py
-# snakeviz output.prof
+# python test_edge_predictor.py
 
 def main():
     rates = np.arange(0.01, 0.21, 0.01)     # physical error rates
-    d = 7
+    d = 9
     code = RotatedCode(d)
     print(f'Testing d = {d}.')
     test_set_size = int(1e5)
@@ -20,9 +19,9 @@ def main():
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
     name = ("d_" + str(d))
-    accuracy_file = 'accuracies/gcn_4_64_64_mlp_129_256_64/' + name + '_accuracy.csv'
-    name = ("d_" + str(d) + "_p_" + "0p5")
-    checkpoint_path = 'saved_models/gcn_4_64_64_mlp_129_256_64/' + name + '.pt'
+    accuracy_file = 'accuracies/gcn_4_64_64_mlp_129_256_64_sigmoid/' + name + '_accuracy.csv'
+    name = ("d_" + str(d) + "_p_" + "0p5_sigmoid_lr_1e_4")
+    checkpoint_path = 'saved_models/gcn_4_64_64_mlp_129_256_64_sigmoid/' + name + '.pt'
     start_epoch = 0
     try:
         checkpoint = torch.load(checkpoint_path, weights_only=True)
