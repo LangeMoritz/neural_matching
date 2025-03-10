@@ -1,13 +1,13 @@
-from rotated_surface_code import RotatedCode
-from graph_representation import get_syndrome_graph
-from mwpm_prediction import compute_mwpm_reward
-from gnn_model import EdgeWeightGNN, sample_weights_get_log_probs
-from utils import test_model, save_checkpoint
+from src.rotated_surface_code import RotatedCode
+from src.graph_representation import get_syndrome_graph
+from src.mwpm_prediction import compute_mwpm_reward
+from src.gnn_model import EdgeWeightGNN, sample_weights_get_log_probs
+from src.utils import test_model, save_checkpoint
 import torch
 
 def main():
     p = 0.05
-    d = 3
+    d = 11
     code = RotatedCode(d)
     print(f'Training d = {d}.')
     num_samples_per_epoch = int(1e3)
@@ -15,7 +15,7 @@ def main():
     tot_num_samples = 0
     test_set_size = int(1e4)
     stddev = torch.tensor(0.1, dtype=torch.float32)
-    lr = 1e-3
+    lr = 1e-4
 
     # initiate the test dataset:
     test_set = []
@@ -35,7 +35,7 @@ def main():
 
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = ("d_" + str(d) + "_p_" + "0p05_reward_0")
+    name = "d_" + str(d)+ "_p_0p" + f"{p:.2f}".split(".")[1]
     checkpoint_path = 'saved_models/gcn_32_64_mlp_128_64_32/' + name + '.pt'
     start_epoch = 0
     try:
@@ -46,7 +46,7 @@ def main():
         print(f"Checkpoint loaded, continuing from epoch {start_epoch}.")
     except FileNotFoundError:
         print("No checkpoint found, starting from scratch.")
-    num_epochs = start_epoch + 500
+    num_epochs = start_epoch + 1000
     # Learning rate:
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr

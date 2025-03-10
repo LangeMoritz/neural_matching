@@ -4,7 +4,7 @@ import stim
 
 def initialize_simulations(code_size, d_t, error_rate):
     circuit = stim.Circuit.generated(
-                            "surface_code:rotated_memory_z",
+                            "surface_code:rotated_memory_x",
                             rounds = d_t,
                             distance = code_size,
                             after_clifford_depolarization = error_rate,

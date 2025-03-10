@@ -4,7 +4,32 @@ import numpy as np
 import yaml
 import torch
 from src.mwpm_prediction import compute_mwpm_reward
-
+import pandas as pd 
+def get_acc_from_csv(file_path, d, d_t, p):
+    """
+    Reads the CSV file and returns the 'acc' value for the given d, d_t, and p.
+    
+    Args:
+        file_path (str): Path to the CSV file.
+        d (float): Value of d.
+        d_t (float): Value of d_t.
+        p (float): Value of p.
+        
+    Returns:
+        float: The corresponding acc value, or None if not found.
+    """
+    df = pd.read_csv(file_path)
+    
+    # Ensure the numeric columns are treated as floats
+    df[['d', 'd_t', 'p']] = df[['d', 'd_t', 'p']].astype(float)
+    
+    # Filter the dataframe for the given values
+    match = df[(df['d'] == d) & (df['d_t'] == d_t) & (df['p'] == p)]
+    
+    if not match.empty:
+        return match['acc'].values[0]  # Return the first match
+    else:
+        return None
 # Save the entire training history along with model and optimizer states
 def save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, test_acc, checkpoint_path):
     try:

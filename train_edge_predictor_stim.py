@@ -1,16 +1,16 @@
 from src.get_stim_syndromes import initialize_simulations
 from src.mwpm_prediction import compute_mwpm_reward
-from src.gnn_model import EdgeWeightGNN, sample_weights_get_log_probs
-from src.utils import test_model, save_checkpoint
+from src.gnn_model import EdgeWeightGNN_stim, sample_weights_get_log_probs
+from src.utils import test_model, save_checkpoint, get_acc_from_csv
 from src.graph_representation_stim import get_syndrome_graph
 import torch
-from torch_geometric.data import Data
 import numpy as np
 
 def main():
     p = 0.001
-    d = 3
+    d = 9
     d_t = d
+    acc_mwpm = get_acc_from_csv('/Users/xlmori/Desktop/neural_matching/mwpm_stim_p_1e-3_5e-3_results.csv', d, d_t, p)
     compiled_sampler, syndrome_mask, detector_coordinates = initialize_simulations(d, d_t, p)
 
     print(f'Training d = {d}, d_t = {d_t}.')
@@ -20,6 +20,7 @@ def main():
     test_set_size = int(1e4)
     stddev = torch.tensor(0.1, dtype=torch.float32)
     lr = 1e-3
+    num_epochs = 500
 
     # initiate the test dataset:
     test_set = []
@@ -33,14 +34,14 @@ def main():
     n_nontrivial_test_samples = len(test_set)
     n_trivial_test_samples = test_set_size - n_nontrivial_test_samples
 
-    model = EdgeWeightGNN()
+    model = EdgeWeightGNN_stim()
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = ("d_" + str(d) + "_d_t_" + str(d_t) + "_p_" + "0p05_reward_0")
-    checkpoint_path = 'saved_models/stim_gcn_32_64_mlp_128_64_32/' + name + '.pt'
+    name = "d_" + str(d) + "_d_t_" + str(d_t) + "_p_0p" + f"{p:.3f}".split(".")[1]
+    checkpoint_path = 'saved_models/stim_gcn_32_64_128_mlp_128_64_32_memory_x/' + name + '.pt'
     start_epoch = 0
     try:
         checkpoint = torch.load(checkpoint_path, weights_only=True)
@@ -50,7 +51,7 @@ def main():
         print(f"Checkpoint loaded, continuing from epoch {start_epoch}.")
     except FileNotFoundError:
         print("No checkpoint found, starting from scratch.")
-    num_epochs = start_epoch + 5
+    num_epochs = start_epoch + num_epochs
     # Learning rate:
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
@@ -86,7 +87,6 @@ def main():
             all_log_probs = torch.stack(all_log_probs)  # Shape: (num_draws_per_sample,)
             all_rewards = torch.tensor(all_rewards, dtype=torch.float32) # Shape: (num_draws_per_sample,)
             # The loss per draw and per edge is the log-probability times the reward
-            # TODO: it's not really the loss, it's actually the rewards times the log of the probs 
             log_loss_per_draw = all_log_probs * all_rewards  # Shape: (num_draws_per_sample, )
 
             # Compute the REINFORCE loss for each edge
@@ -109,7 +109,7 @@ def main():
         test_acc = (num_corr_nontrivial + n_trivial_test_samples) / test_set_size
         # Print training progress
         if epoch % 1 == 0:
-            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}')
+            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}, MWPM: {1 -acc_mwpm:.4f}, Diff: {test_acc - (1 - acc_mwpm):.4f}')
 
         # Save the checkpoint after the current epoch
         save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, test_acc, checkpoint_path)
