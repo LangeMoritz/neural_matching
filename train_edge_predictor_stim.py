@@ -7,20 +7,20 @@ import torch
 import numpy as np
 
 def main():
-    p = 0.001
-    d = 9
+    p = 0.002
+    d = 11
     d_t = d
     acc_mwpm = get_acc_from_csv('/Users/xlmori/Desktop/neural_matching/mwpm_stim_p_1e-3_5e-3_results.csv', d, d_t, p)
     compiled_sampler, syndrome_mask, detector_coordinates = initialize_simulations(d, d_t, p)
 
     print(f'Training d = {d}, d_t = {d_t}.')
     num_samples_per_epoch = int(1e3)
-    num_draws_per_sample = int(1e2)
+    num_draws_per_sample = int(2e2)
     tot_num_samples = 0
     test_set_size = int(1e4)
     stddev = torch.tensor(0.1, dtype=torch.float32)
-    lr = 1e-3
-    num_epochs = 500
+    lr = 1e-4
+    num_epochs = 1000
 
     # initiate the test dataset:
     test_set = []
@@ -86,8 +86,10 @@ def main():
             # Stack log-probs and rewards for averaging
             all_log_probs = torch.stack(all_log_probs)  # Shape: (num_draws_per_sample,)
             all_rewards = torch.tensor(all_rewards, dtype=torch.float32) # Shape: (num_draws_per_sample,)
+            # substract the baseline:
+            baseline = all_rewards.mean()
             # The loss per draw and per edge is the log-probability times the reward
-            log_loss_per_draw = all_log_probs * all_rewards  # Shape: (num_draws_per_sample, )
+            log_loss_per_draw = all_log_probs * (all_rewards - baseline) # Shape: (num_draws_per_sample, )
 
             # Compute the REINFORCE loss for each edge
             # maximize the reward, so minimize - reward
@@ -109,7 +111,7 @@ def main():
         test_acc = (num_corr_nontrivial + n_trivial_test_samples) / test_set_size
         # Print training progress
         if epoch % 1 == 0:
-            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}, MWPM: {1 -acc_mwpm:.4f}, Diff: {test_acc - (1 - acc_mwpm):.4f}')
+            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}, MWPM: {1 -acc_mwpm:.6f}, Diff: {test_acc - (1 - acc_mwpm):.4f}')
 
         # Save the checkpoint after the current epoch
         save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, test_acc, checkpoint_path)

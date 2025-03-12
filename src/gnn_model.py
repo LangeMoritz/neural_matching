@@ -200,7 +200,7 @@ class EdgeWeightGNN(nn.Module):
     def __init__(
         self,
         n_node_features = 4,
-        hidden_channels_GCN=[32, 64],
+        hidden_channels_GCN=[32, 64, 128],
         hidden_channels_MLP=[128, 64, 32]):
         # num_classes is 1 for each head
         super().__init__()

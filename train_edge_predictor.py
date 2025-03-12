@@ -4,18 +4,20 @@ from src.mwpm_prediction import compute_mwpm_reward
 from src.gnn_model import EdgeWeightGNN, sample_weights_get_log_probs
 from src.utils import test_model, save_checkpoint
 import torch
+import numpy as np
 
 def main():
-    p = 0.05
-    d = 11
+    p = 0.1
+    d = 3
     code = RotatedCode(d)
     print(f'Training d = {d}.')
     num_samples_per_epoch = int(1e3)
-    num_draws_per_sample = int(1e2)
+    num_draws_per_sample = int(2e2)
     tot_num_samples = 0
     test_set_size = int(1e4)
     stddev = torch.tensor(0.1, dtype=torch.float32)
     lr = 1e-4
+    num_epochs = 1300
 
     # initiate the test dataset:
     test_set = []
@@ -33,10 +35,15 @@ def main():
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
+    mwpm = np.genfromtxt('MWPM_2D_3_11.csv', delimiter=',')
+    d_check = mwpm[:, 0] == d
+    p_check = np.isclose(mwpm[0, :], 0.05)
+    mwpm_acc = 1 - mwpm[d_check, p_check][0]
+
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = "d_" + str(d)+ "_p_0p" + f"{p:.2f}".split(".")[1]
-    checkpoint_path = 'saved_models/gcn_32_64_mlp_128_64_32/' + name + '.pt'
+    name = "d_" + str(d)+ "_p_0p05"# + f"{p:.2f}".split(".")[1]
+    checkpoint_path = 'saved_models/code_cap_gcn_32_64_128_mlp_128_64_32/' + name + '.pt'
     start_epoch = 0
     try:
         checkpoint = torch.load(checkpoint_path, weights_only=True)
@@ -46,7 +53,7 @@ def main():
         print(f"Checkpoint loaded, continuing from epoch {start_epoch}.")
     except FileNotFoundError:
         print("No checkpoint found, starting from scratch.")
-    num_epochs = start_epoch + 1000
+    num_epochs = start_epoch + num_epochs
     # Learning rate:
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
@@ -81,9 +88,10 @@ def main():
             # Stack log-probs and rewards for averaging
             all_log_probs = torch.stack(all_log_probs)  # Shape: (num_draws_per_sample,)
             all_rewards = torch.tensor(all_rewards, dtype=torch.float32) # Shape: (num_draws_per_sample,)
+            # subtract the baseline:
+            baseline = all_rewards.mean()
             # The loss per draw and per edge is the log-probability times the reward
-            # TODO: it's not really the loss, it's actually the rewards times the log of the probs 
-            log_loss_per_draw = all_log_probs * all_rewards  # Shape: (num_draws_per_sample, )
+            log_loss_per_draw = all_log_probs * (all_rewards - baseline) # Shape: (num_draws_per_sample, )
 
             # Compute the REINFORCE loss for each edge
             # maximize the reward, so minimize - reward
@@ -105,8 +113,7 @@ def main():
         test_acc = (num_corr_nontrivial + n_trivial_test_samples) / test_set_size
         # Print training progress
         if epoch % 1 == 0:
-            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}')
-
+            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}, MWPM: {mwpm_acc:.6f}, Diff: {test_acc - mwpm_acc:.4f}')
         # Save the checkpoint after the current epoch
         save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, test_acc, checkpoint_path)
 if __name__ == "__main__":
