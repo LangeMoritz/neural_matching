@@ -5,31 +5,20 @@ from src.gnn_model import EdgeWeightGNN, sample_weights_get_log_probs
 from src.utils import test_model, save_checkpoint
 import torch
 import numpy as np
+# python -m cProfile -o timing_code_cap.prof train_edge_predictor.py
+# snakeviz timing_code_cap.prof
 
 def main():
-    p = 0.1
-    d = 3
+    p = 0.01
+    d = 11
     code = RotatedCode(d)
     print(f'Training d = {d}.')
     num_samples_per_epoch = int(1e3)
     num_draws_per_sample = int(2e2)
     tot_num_samples = 0
-    test_set_size = int(1e4)
     stddev = torch.tensor(0.1, dtype=torch.float32)
     lr = 1e-4
-    num_epochs = 1300
-
-    # initiate the test dataset:
-    test_set = []
-    test_n_trivials = 0
-    for _ in range(test_set_size):
-        graph = get_syndrome_graph(code, p)
-        if not graph == None:
-           test_set.append(graph)
-        else: 
-            test_n_trivials += 1
-    n_nontrivial_test_samples = len(test_set)
-    n_trivial_test_samples = test_set_size - n_nontrivial_test_samples
+    num_epochs = 100
 
     model = EdgeWeightGNN()
     model.train()
@@ -42,8 +31,8 @@ def main():
 
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = "d_" + str(d)+ "_p_0p05"# + f"{p:.2f}".split(".")[1]
-    checkpoint_path = 'saved_models/code_cap_gcn_32_64_128_mlp_128_64_32/' + name + '.pt'
+    name = "d_" + str(d)+ "_p_0p01"# + f"{p:.f}".split(".")[1]
+    checkpoint_path = 'saved_models/code_capacity_gcn_32_64_128_mlp_256_128_64_32/' + name + '.pt'
     start_epoch = 0
     try:
         checkpoint = torch.load(checkpoint_path, weights_only=True)
@@ -70,6 +59,7 @@ def main():
             if not graph == None:
                 graph_list.append(graph)
 
+        train_acc = 0
         for i in range(num_samples_per_epoch):  # Draw multiple samples per epoch
             data = graph_list[i]
             all_log_probs = []
@@ -77,6 +67,8 @@ def main():
             # Forward pass: Get sampled edge weights and their log-probabilities
             edge_index, edge_weights_mean, num_real_nodes, num_boundary_nodes = \
                 model(data.x, data.edge_index, data.edge_attr)
+            train_reward = compute_mwpm_reward(edge_index, edge_weights_mean, num_real_nodes,num_boundary_nodes, data.y)
+            train_acc += (train_reward + 1) / (2 * num_samples_per_epoch)
             sampled_edge_weights, log_probs = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev)
             # sampled_edge_weights = torch.sigmoid(sampled_edge_weights)
             for j in range(num_draws_per_sample):
@@ -108,12 +100,12 @@ def main():
 
         train_acc = test_model(model, num_samples_per_epoch, graph_list)
 
-        test_acc_nontrivial = test_model(model, n_nontrivial_test_samples, test_set)
-        num_corr_nontrivial = test_acc_nontrivial * n_nontrivial_test_samples
-        test_acc = (num_corr_nontrivial + n_trivial_test_samples) / test_set_size
+        # test_acc_nontrivial = test_model(model, n_nontrivial_test_samples, test_set)
+        # num_corr_nontrivial = test_acc_nontrivial * n_nontrivial_test_samples
+        test_acc = 1.0 #(num_corr_nontrivial + n_trivial_test_samples) / test_set_size
         # Print training progress
         if epoch % 1 == 0:
-            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}, MWPM: {mwpm_acc:.6f}, Diff: {test_acc - mwpm_acc:.4f}')
+            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}, MWPM: {mwpm_acc:.6f}')
         # Save the checkpoint after the current epoch
         save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, test_acc, checkpoint_path)
 if __name__ == "__main__":

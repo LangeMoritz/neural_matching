@@ -8,7 +8,7 @@ import numpy as np
 
 def main():
     rates = np.arange(0.001, 0.006, 0.001)     # physical error rates
-    d = 3
+    d = 7
     d_t = d
     print(f'Testing d = {d}.')
     test_set_size = int(1e5)
@@ -19,7 +19,7 @@ def main():
     # generate a unique name to not overwrite other models
     name = ("d_" + str(d))
     accuracy_file = 'accuracies/stim_gcn_32_64_128_mlp_128_64_32_memory_x/' + name + '_accuracy.csv'
-    name = "d_" + str(d) + "_d_t_" + str(d_t) + "_p_0p001" 
+    name = "d_" + str(d) + "_d_t_" + str(d_t) + "_p_0p002" 
     checkpoint_path = 'saved_models/stim_gcn_32_64_128_mlp_128_64_32_memory_x/' + name + '.pt'
     start_epoch = 0
     try:

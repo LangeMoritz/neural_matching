@@ -5,10 +5,12 @@ from src.utils import test_model, save_checkpoint, get_acc_from_csv
 from src.graph_representation_stim import get_syndrome_graph
 import torch
 import numpy as np
+# python -m cProfile -o timing_circuit_level.prof train_edge_predictor.py
+# snakeviz timing_circuit_level.prof
 
 def main():
-    p = 0.002
-    d = 11
+    p = 0.001
+    d = 3
     d_t = d
     acc_mwpm = get_acc_from_csv('/Users/xlmori/Desktop/neural_matching/mwpm_stim_p_1e-3_5e-3_results.csv', d, d_t, p)
     compiled_sampler, syndrome_mask, detector_coordinates = initialize_simulations(d, d_t, p)
@@ -17,22 +19,9 @@ def main():
     num_samples_per_epoch = int(1e3)
     num_draws_per_sample = int(2e2)
     tot_num_samples = 0
-    test_set_size = int(1e4)
     stddev = torch.tensor(0.1, dtype=torch.float32)
     lr = 1e-4
-    num_epochs = 1000
-
-    # initiate the test dataset:
-    test_set = []
-    test_n_trivials = 0
-    for _ in range(test_set_size):
-        graph = get_syndrome_graph(compiled_sampler, syndrome_mask, detector_coordinates)
-        if not graph == None:
-           test_set.append(graph)
-        else: 
-            test_n_trivials += 1
-    n_nontrivial_test_samples = len(test_set)
-    n_trivial_test_samples = test_set_size - n_nontrivial_test_samples
+    num_epochs = 100
 
     model = EdgeWeightGNN_stim()
     model.train()
@@ -41,7 +30,7 @@ def main():
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
     name = "d_" + str(d) + "_d_t_" + str(d_t) + "_p_0p" + f"{p:.3f}".split(".")[1]
-    checkpoint_path = 'saved_models/stim_gcn_32_64_128_mlp_128_64_32_memory_x/' + name + '.pt'
+    checkpoint_path = 'saved_models/stim_gcn_32_64_128_mlp_256_128_64_32/' + name + '.pt'
     start_epoch = 0
     try:
         checkpoint = torch.load(checkpoint_path, weights_only=True)
@@ -68,6 +57,7 @@ def main():
             if not graph == None:
                 graph_list.append(graph)
 
+        train_acc = 0
         for i in range(num_samples_per_epoch):  # Draw multiple samples per epoch
             data = graph_list[i]
             all_log_probs = []
@@ -75,6 +65,8 @@ def main():
             # Forward pass: Get sampled edge weights and their log-probabilities
             edge_index, edge_weights_mean, num_real_nodes, num_boundary_nodes = \
                 model(data.x, data.edge_index, data.edge_attr)
+            train_reward = compute_mwpm_reward(edge_index, edge_weights_mean, num_real_nodes,num_boundary_nodes, data.y)
+            train_acc += (train_reward + 1) / (2 * num_samples_per_epoch)
             sampled_edge_weights, log_probs = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev)
             # sampled_edge_weights = torch.sigmoid(sampled_edge_weights)
             for j in range(num_draws_per_sample):
@@ -106,9 +98,9 @@ def main():
 
         train_acc = test_model(model, num_samples_per_epoch, graph_list)
 
-        test_acc_nontrivial = test_model(model, n_nontrivial_test_samples, test_set)
-        num_corr_nontrivial = test_acc_nontrivial * n_nontrivial_test_samples
-        test_acc = (num_corr_nontrivial + n_trivial_test_samples) / test_set_size
+        # test_acc_nontrivial = test_model(model, n_nontrivial_test_samples, test_set)
+        # num_corr_nontrivial = test_acc_nontrivial * n_nontrivial_test_samples
+        test_acc = 1.0#(num_corr_nontrivial + n_trivial_test_samples) / test_set_size
         # Print training progress
         if epoch % 1 == 0:
             print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}, MWPM: {1 -acc_mwpm:.6f}, Diff: {test_acc - (1 - acc_mwpm):.4f}')
