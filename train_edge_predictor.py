@@ -9,7 +9,7 @@ import numpy as np
 # snakeviz timing_code_cap.prof
 
 def main():
-    p = 0.01
+    p = 0.1
     d = 11
     code = RotatedCode(d)
     print(f'Training d = {d}.')
@@ -18,7 +18,7 @@ def main():
     tot_num_samples = 0
     stddev = torch.tensor(0.1, dtype=torch.float32)
     lr = 1e-4
-    num_epochs = 100
+    num_epochs = 300
 
     model = EdgeWeightGNN()
     model.train()

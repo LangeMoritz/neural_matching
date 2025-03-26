@@ -9,10 +9,10 @@ import numpy as np
 # snakeviz timing_circuit_level.prof
 
 def main():
-    p = 0.001
+    p = 0.0005
     d = 3
     d_t = d
-    acc_mwpm = get_acc_from_csv('/Users/xlmori/Desktop/neural_matching/mwpm_stim_p_1e-3_5e-3_results.csv', d, d_t, p)
+    acc_mwpm = 1.0 #get_acc_from_csv('/Users/xlmori/Desktop/neural_matching/mwpm_stim_p_1e-3_5e-3_results.csv', d, d_t, p)
     compiled_sampler, syndrome_mask, detector_coordinates = initialize_simulations(d, d_t, p)
 
     print(f'Training d = {d}, d_t = {d_t}.')
@@ -21,7 +21,7 @@ def main():
     tot_num_samples = 0
     stddev = torch.tensor(0.1, dtype=torch.float32)
     lr = 1e-4
-    num_epochs = 100
+    num_epochs = 500
 
     model = EdgeWeightGNN_stim()
     model.train()
@@ -29,8 +29,8 @@ def main():
 
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = "d_" + str(d) + "_d_t_" + str(d_t) + "_p_0p" + f"{p:.3f}".split(".")[1]
-    checkpoint_path = 'saved_models/stim_gcn_32_64_128_mlp_256_128_64_32/' + name + '.pt'
+    name = "d_" + str(d) + "_d_t_" + str(d_t) + "_p_0p" + f"{p:.4f}".split(".")[1]
+    checkpoint_path = 'saved_models/stim_gcn_32_64_128_256_mlp_512_256_128_64_32/' + name + '.pt'
     start_epoch = 0
     try:
         checkpoint = torch.load(checkpoint_path, weights_only=True)

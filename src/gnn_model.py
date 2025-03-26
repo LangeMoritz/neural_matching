@@ -19,8 +19,8 @@ class EdgeWeightGNN_stim(nn.Module):
     def __init__(
         self,
         n_node_features = 5,
-        hidden_channels_GCN=[32, 64, 128],
-        hidden_channels_MLP=[256, 128, 64, 32]):
+        hidden_channels_GCN=[32, 64, 128, 256],
+        hidden_channels_MLP=[512, 256, 128, 64, 32]):
         # num_classes is 1 for each head
         super().__init__()
         # GCN layers

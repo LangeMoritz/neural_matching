@@ -8,20 +8,20 @@ import numpy as np
 # python test_edge_predictor.py
 
 def main():
-    rates = [0.1]#np.arange(0.01, 0.21, 0.01)     # physical error rates
+    rates = np.arange(0.01, 0.21, 0.01)     # physical error rates
     d = 3
     code = RotatedCode(d)
     print(f'Testing d = {d}.')
-    test_set_size = int(1e1)
+    test_set_size = int(1e5)
 
     model = EdgeWeightGNN()
     model.eval()
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
     name = ("d_" + str(d))
-    accuracy_file = 'accuracies/code_cap_gcn_32_64_128_mlp_128_64_32/' + name + '_accuracy.csv'
-    name = ("d_" + str(d) + "_p_" + "0p05")
-    checkpoint_path = 'saved_models/code_cap_gcn_32_64_128_mlp_128_64_32/' + name + '.pt'
+    accuracy_file = 'accuracies/code_capacity_gcn_32_64_128_mlp_256_128_64_32/' + name + '_accuracy.csv'
+    name = ("d_" + str(d) + "_p_" + "0p01")
+    checkpoint_path = 'saved_models/code_capacity_gcn_32_64_128_mlp_256_128_64_32/' + name + '.pt'
     start_epoch = 0
     try:
         checkpoint = torch.load(checkpoint_path, weights_only=True)
@@ -40,7 +40,6 @@ def main():
             graph = get_syndrome_graph(code, p)
             if not graph == None:
                test_set.append(graph)
-               print(graph.edge_index)
             else: 
                 test_n_trivials += 1
         n_nontrivial_test_samples = len(test_set)
@@ -51,7 +50,7 @@ def main():
         test_acc = (num_corr_nontrivial + n_trivial_test_samples) / test_set_size
         print(f'Physical error rate: {p:.4f}, Logical failure rate: {1 -test_acc:.4f}, Logical accuracy: {test_acc:.4f}')
         logical_accs.append(test_acc)
-    # np.savetxt(accuracy_file, np.array(logical_accs), delimiter=",")
+    np.savetxt(accuracy_file, np.array(logical_accs), delimiter=",")
 if __name__ == "__main__":
     main()
 
