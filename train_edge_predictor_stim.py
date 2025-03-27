@@ -16,21 +16,23 @@ def main():
     compiled_sampler, syndrome_mask, detector_coordinates = initialize_simulations(d, d_t, p)
 
     print(f'Training d = {d}, d_t = {d_t}.')
-    num_samples_per_epoch = int(1e3)
-    num_draws_per_sample = int(2e2)
+    num_samples_per_epoch = int(1e1)
+    num_draws_per_sample = int(2e1)
     tot_num_samples = 0
-    stddev = torch.tensor(0.1, dtype=torch.float32)
+    stddev = torch.tensor(0.1, dtype=torch.float32, device = torch.device('cpu'))
     lr = 1e-4
-    num_epochs = 500
+    num_epochs = 2
 
     model = EdgeWeightGNN_stim()
+    device = torch.device('cpu')
+    model.to(device)
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
     name = "d_" + str(d) + "_d_t_" + str(d_t) + "_p_0p" + f"{p:.4f}".split(".")[1]
-    checkpoint_path = 'saved_models/stim_gcn_32_64_128_256_mlp_512_256_128_64_32/' + name + '.pt'
+    checkpoint_path = 'saved_models/' + name + '.pt'
     start_epoch = 0
     try:
         checkpoint = torch.load(checkpoint_path, weights_only=True)
@@ -77,7 +79,7 @@ def main():
                 all_rewards.append(reward)
             # Stack log-probs and rewards for averaging
             all_log_probs = torch.stack(all_log_probs)  # Shape: (num_draws_per_sample,)
-            all_rewards = torch.tensor(all_rewards, dtype=torch.float32) # Shape: (num_draws_per_sample,)
+            all_rewards = torch.tensor(all_rewards, dtype=torch.float32, device = torch.device('cpu')) # Shape: (num_draws_per_sample,)
             # substract the baseline:
             baseline = all_rewards.mean()
             # The loss per draw and per edge is the log-probability times the reward

@@ -55,10 +55,11 @@ __pycache__
 *.png
 *.yaml
 *.prof
+*.sh
 
 # python virtual environment
 venv_neural_matching/
-
+venv_vera_neural_matching/
 wandb/
 
 blossomV/
