@@ -8,6 +8,7 @@ import time
 import numpy as np
 from datetime import datetime
 import os
+import argparse
 # python -m cProfile -o timing_circuit_level.prof train_edge_predictor.py
 # snakeviz timing_circuit_level.prof
 import wandb
@@ -15,21 +16,34 @@ os.environ["WANDB_SILENT"] = "True"
 
 def main():
     time_start = time.perf_counter()
-    p = 0.0005
-    d = 3
+    time_sampling = 0
+    time_mwpm = 0
+    p = 0.001
+    # Initialize the argument parser
+    parser = argparse.ArgumentParser(description="Train the neural network with specified parameters")
+    parser.add_argument('--d', type=int, required=True, help='The value of d')
+
+    # Parse the arguments
+    args = parser.parse_args()
+
+    # Access the value of d
+    d = args.d
     d_t = d
     acc_mwpm = 1.0 #get_acc_from_csv('/Users/xlmori/Desktop/neural_matching/mwpm_stim_p_1e-3_5e-3_results.csv', d, d_t, p)
     compiled_sampler, syndrome_mask, detector_coordinates = initialize_simulations(d, d_t, p)
 
     print(f'Training d = {d}, d_t = {d_t}.')
-    num_samples_per_epoch = int(1e1)
-    num_draws_per_sample = int(2e1)
+    num_samples_per_epoch = int(1e4)
+    num_draws_per_sample = int(2e2)
     tot_num_samples = 0
     stddev = torch.tensor(0.1, dtype=torch.float32, device = torch.device('cpu'))
     lr = 1e-4
-    num_epochs = 2
+    num_epochs = 100
 
-    model = EdgeWeightGNN_stim()
+    hidden_channels_GCN = [32, 64, 128, 256]
+    hidden_channels_MLP = [512, 256, 128, 64, 32]
+
+    model = EdgeWeightGNN_stim(hidden_channels_GCN = hidden_channels_GCN, hidden_channels_MLP = hidden_channels_MLP)
     device = torch.device('cpu')
     model.to(device)
     model.train()
@@ -38,7 +52,7 @@ def main():
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
     current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
-    name = "d_" + str(d) + "_d_t_" + str(d_t) + "_p_0p" + f"{p:.4f}".split(".")[1] + "_" + current_datetime
+    name = "d_" + str(d) + "_d_t_" + str(d_t) + "_" + current_datetime
     
     checkpoint_path = 'saved_models/' + name + '.pt'
     start_epoch = 0
@@ -62,7 +76,9 @@ def main():
         "stddev": stddev.item(),
         "d": d,
         "d_t": d_t,
-        "p": p
+        "p": p,
+        "hidden_channels_GCN": hidden_channels_GCN, 
+        "hidden_channels_MLP": hidden_channels_MLP
     })
 
     for epoch in range(start_epoch, num_epochs):
@@ -72,12 +88,13 @@ def main():
         optimizer.zero_grad()
 
         # initiate the dataset:
+        time_sampling_start = time.perf_counter()
         graph_list = []
         while len(graph_list) < num_samples_per_epoch:
             graph = get_syndrome_graph(compiled_sampler, syndrome_mask, detector_coordinates)
             if not graph == None:
                 graph_list.append(graph)
-
+        time_sampling += (time.perf_counter() - time_sampling_start)
         train_acc = 0
         for i in range(num_samples_per_epoch):  # Draw multiple samples per epoch
             data = graph_list[i]
@@ -86,16 +103,24 @@ def main():
             # Forward pass: Get sampled edge weights and their log-probabilities
             edge_index, edge_weights_mean, num_real_nodes, num_boundary_nodes = \
                 model(data.x, data.edge_index, data.edge_attr)
+
+            # get accuracy of the means:
+            time_mwpm_start = time.perf_counter()
             train_reward = compute_mwpm_reward(edge_index, edge_weights_mean, num_real_nodes,num_boundary_nodes, data.y)
             train_acc += (train_reward + 1) / (2 * num_samples_per_epoch)
+            time_mwpm += (time.perf_counter() - time_mwpm_start)
+
             sampled_edge_weights, log_probs = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev)
-            # sampled_edge_weights = torch.sigmoid(sampled_edge_weights)
+
+            time_mwpm_start = time.perf_counter()
             for j in range(num_draws_per_sample):
                 edge_weights_j = sampled_edge_weights[j, :]
                 reward = compute_mwpm_reward(edge_index, edge_weights_j, num_real_nodes,num_boundary_nodes, data.y)
                 # Store log-probabilities and rewards
                 all_log_probs.append(log_probs[j])
                 all_rewards.append(reward)
+            time_mwpm += (time.perf_counter() - time_mwpm_start)
+
             # Stack log-probs and rewards for averaging
             all_log_probs = torch.stack(all_log_probs)  # Shape: (num_draws_per_sample,)
             all_rewards = torch.tensor(all_rewards, dtype=torch.float32, device = torch.device('cpu')) # Shape: (num_draws_per_sample,)
@@ -125,18 +150,20 @@ def main():
         epoch_time = time.perf_counter() - epoch_time_start
         # Print training progress
         if epoch % 1 == 0:
-            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}, MWPM: {1 -acc_mwpm:.6f}, Diff: {test_acc - (1 - acc_mwpm):.4f}, time: {epoch_time:.2f} seconds')
+            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Time: {epoch_time:.2f} seconds')
         # Log to wandb
         wandb.log({
             "epoch": epoch,
             "log_loss": epoch_log_loss,
             "mean_reward": epoch_reward,
-            "time": epoch_time
+            "time": epoch_time,
+            "time mwpm": time_mwpm,
+            "time sampling": time_sampling,
         })
         # Save the checkpoint after the current epoch
-        save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, test_acc, checkpoint_path)
+        save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, epoch_log_loss, checkpoint_path)
     time_end = time.perf_counter()
-    print(f'Total training time: {time_end - time_start:.2f} seconds')
+    print(f'Total training time: {time_end - time_start:.2f}s, thereof sampling: {time_sampling:.2f}s and MWPM: {time_mwpm:.2f}s')
 if __name__ == "__main__":
     main()
 

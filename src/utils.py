@@ -31,7 +31,7 @@ def get_acc_from_csv(file_path, d, d_t, p):
     else:
         return None
 # Save the entire training history along with model and optimizer states
-def save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, test_acc, checkpoint_path):
+def save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, epoch_log_loss, checkpoint_path):
     try:
         # Load existing checkpoint if it exists
         checkpoint = torch.load(checkpoint_path, weights_only=False)
@@ -40,7 +40,7 @@ def save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, test_acc, 
         history = []
 
     # Append the new epoch data
-    history.append({'epoch': epoch + 1, 'epoch_reward': epoch_reward, 'train_acc': train_acc, 'test_acc': test_acc})
+    history.append({'epoch': epoch + 1, 'epoch_reward': epoch_reward, 'train_acc': train_acc, 'epoch_log_loss': epoch_log_loss})
 
     # Save updated checkpoint
     checkpoint = {
