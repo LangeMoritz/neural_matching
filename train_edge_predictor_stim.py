@@ -4,11 +4,17 @@ from src.gnn_model import EdgeWeightGNN_stim, sample_weights_get_log_probs
 from src.utils import test_model, save_checkpoint, get_acc_from_csv
 from src.graph_representation_stim import get_syndrome_graph
 import torch
+import time
 import numpy as np
+from datetime import datetime
+import os
 # python -m cProfile -o timing_circuit_level.prof train_edge_predictor.py
 # snakeviz timing_circuit_level.prof
+import wandb
+os.environ["WANDB_SILENT"] = "True"
 
 def main():
+    time_start = time.perf_counter()
     p = 0.0005
     d = 3
     d_t = d
@@ -31,7 +37,9 @@ def main():
 
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = "d_" + str(d) + "_d_t_" + str(d_t) + "_p_0p" + f"{p:.4f}".split(".")[1]
+    current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
+    name = "d_" + str(d) + "_d_t_" + str(d_t) + "_p_0p" + f"{p:.4f}".split(".")[1] + "_" + current_datetime
+    
     checkpoint_path = 'saved_models/' + name + '.pt'
     start_epoch = 0
     try:
@@ -46,8 +54,19 @@ def main():
     # Learning rate:
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+    wandb.init(project="neural_matching", name = name, config = {
+        "learning_rate": lr,
+        "epochs": num_epochs,
+        "num_samples_per_epoch": num_samples_per_epoch,
+        "num_draws_per_sample": num_draws_per_sample,
+        "stddev": stddev.item(),
+        "d": d,
+        "d_t": d_t,
+        "p": p
+    })
 
     for epoch in range(start_epoch, num_epochs):
+        epoch_time_start = time.perf_counter()
         epoch_log_loss = 0
         epoch_reward = 0
         optimizer.zero_grad()
@@ -103,12 +122,21 @@ def main():
         # test_acc_nontrivial = test_model(model, n_nontrivial_test_samples, test_set)
         # num_corr_nontrivial = test_acc_nontrivial * n_nontrivial_test_samples
         test_acc = 1.0#(num_corr_nontrivial + n_trivial_test_samples) / test_set_size
+        epoch_time = time.perf_counter() - epoch_time_start
         # Print training progress
         if epoch % 1 == 0:
-            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}, MWPM: {1 -acc_mwpm:.6f}, Diff: {test_acc - (1 - acc_mwpm):.4f}')
-
+            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}, MWPM: {1 -acc_mwpm:.6f}, Diff: {test_acc - (1 - acc_mwpm):.4f}, time: {epoch_time:.2f} seconds')
+        # Log to wandb
+        wandb.log({
+            "epoch": epoch,
+            "log_loss": epoch_log_loss,
+            "mean_reward": epoch_reward,
+            "time": epoch_time
+        })
         # Save the checkpoint after the current epoch
         save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, test_acc, checkpoint_path)
+    time_end = time.perf_counter()
+    print(f'Total training time: {time_end - time_start:.2f} seconds')
 if __name__ == "__main__":
     main()
 
