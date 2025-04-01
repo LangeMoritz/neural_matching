@@ -4,35 +4,62 @@ from src.mwpm_prediction import compute_mwpm_reward
 from src.gnn_model import EdgeWeightGNN, sample_weights_get_log_probs
 from src.utils import test_model, save_checkpoint
 import torch
+import argparse
 import numpy as np
+import os
+import time
+from datetime import datetime
 # python -m cProfile -o timing_code_cap.prof train_edge_predictor.py
 # snakeviz timing_code_cap.prof
+import wandb
+os.environ["WANDB_SILENT"] = "True"
 
 def main():
+    time_start = time.perf_counter()
+    # Initialize the argument parser
+    parser = argparse.ArgumentParser(description="Train the neural network with specified parameters")
+    parser.add_argument('--d', type=int, required=True, help='The value of d')
+
+    # Parse the arguments
+    args = parser.parse_args()
+
+    # Access the value of d
+    d = args.d
+
+    # Get the SLURM job ID from the environment
+    job_id = os.environ.get('SLURM_JOB_ID', 'unknown')  # Default to 'unknown' if not running in SLURM
+
+
     p = 0.1
-    d = 11
     code = RotatedCode(d)
     print(f'Training d = {d}.')
-    num_samples_per_epoch = int(1e3)
+    num_samples_per_epoch = int(1e4)
     num_draws_per_sample = int(2e2)
     tot_num_samples = 0
     stddev = torch.tensor(0.1, dtype=torch.float32)
     lr = 1e-4
-    num_epochs = 300
+    num_epochs = 500
 
-    model = EdgeWeightGNN()
+    hidden_channels_GCN = [32, 64, 128, 256]
+    hidden_channels_MLP = [512, 256, 128, 64, 32]
+
+    model = EdgeWeightGNN(hidden_channels_GCN = hidden_channels_GCN, hidden_channels_MLP = hidden_channels_MLP)
+    device = torch.device('cpu')
+    model.to(device)
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    mwpm = np.genfromtxt('MWPM_2D_3_11.csv', delimiter=',')
-    d_check = mwpm[:, 0] == d
-    p_check = np.isclose(mwpm[0, :], 0.05)
-    mwpm_acc = 1 - mwpm[d_check, p_check][0]
+    # mwpm = np.genfromtxt('MWPM_2D_3_11.csv', delimiter=',')
+    # d_check = mwpm[:, 0] == d
+    # p_check = np.isclose(mwpm[0, :], 0.05)
+    # mwpm_acc = 1 - mwpm[d_check, p_check][0]
 
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = "d_" + str(d)+ "_p_0p01"# + f"{p:.f}".split(".")[1]
-    checkpoint_path = 'saved_models/code_capacity_gcn_32_64_128_mlp_256_128_64_32/' + name + '.pt'
+    current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
+    name = "d_" + str(d) + "_" + current_datetime + '_' + job_id
+    
+    checkpoint_path = 'saved_models_code_capacity/' + name + '.pt'
     start_epoch = 0
     try:
         checkpoint = torch.load(checkpoint_path, weights_only=True)
@@ -47,7 +74,19 @@ def main():
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
+    wandb.init(project="neural_matching_code_capacity", name = name, config = {
+        "learning_rate": lr,
+        "epochs": num_epochs,
+        "num_samples_per_epoch": num_samples_per_epoch,
+        "num_draws_per_sample": num_draws_per_sample,
+        "stddev": stddev.item(),
+        "d": d,
+        "p": p,
+        "hidden_channels_GCN": hidden_channels_GCN, 
+        "hidden_channels_MLP": hidden_channels_MLP})
+
     for epoch in range(start_epoch, num_epochs):
+        epoch_time_start = time.perf_counter()
         epoch_log_loss = 0
         epoch_reward = 0
         optimizer.zero_grad()
@@ -98,16 +137,22 @@ def main():
         epoch_reward /= num_samples_per_epoch
         tot_num_samples += num_samples_per_epoch
 
-        train_acc = test_model(model, num_samples_per_epoch, graph_list)
-
-        # test_acc_nontrivial = test_model(model, n_nontrivial_test_samples, test_set)
-        # num_corr_nontrivial = test_acc_nontrivial * n_nontrivial_test_samples
-        test_acc = 1.0 #(num_corr_nontrivial + n_trivial_test_samples) / test_set_size
+        epoch_time = time.perf_counter() - epoch_time_start
         # Print training progress
         if epoch % 1 == 0:
-            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}, MWPM: {mwpm_acc:.6f}')
+            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Time: {epoch_time:.2f} seconds')
+        # Log to wandb
+        wandb.log({
+            "epoch": epoch,
+            "log_loss": epoch_log_loss,
+            "mean_reward": epoch_reward,
+            "time": epoch_time,
+        })
         # Save the checkpoint after the current epoch
-        save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, test_acc, checkpoint_path)
+        save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, epoch_log_loss, checkpoint_path)
+
+    time_end = time.perf_counter()
+    print(f'Total training time: {time_end - time_start:.2f}s')
 if __name__ == "__main__":
     main()
 

@@ -18,7 +18,7 @@ def main():
     time_start = time.perf_counter()
     time_sampling = 0
     time_mwpm = 0
-    p = 0.001
+    p = 0.0005
     # Initialize the argument parser
     parser = argparse.ArgumentParser(description="Train the neural network with specified parameters")
     parser.add_argument('--d', type=int, required=True, help='The value of d')
@@ -38,7 +38,7 @@ def main():
     tot_num_samples = 0
     stddev = torch.tensor(0.1, dtype=torch.float32, device = torch.device('cpu'))
     lr = 1e-4
-    num_epochs = 100
+    num_epochs = 500
 
     hidden_channels_GCN = [32, 64, 128, 256]
     hidden_channels_MLP = [512, 256, 128, 64, 32]
@@ -52,7 +52,7 @@ def main():
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
     current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
-    name = "d_" + str(d) + "_d_t_" + str(d_t) + "_" + current_datetime
+    name = 'd_11_d_t_11_250330_210913'#"d_" + str(d) + "_d_t_" + str(d_t) + "_" + current_datetime
     
     checkpoint_path = 'saved_models/' + name + '.pt'
     start_epoch = 0
@@ -142,11 +142,6 @@ def main():
         epoch_reward /= num_samples_per_epoch
         tot_num_samples += num_samples_per_epoch
 
-        train_acc = test_model(model, num_samples_per_epoch, graph_list)
-
-        # test_acc_nontrivial = test_model(model, n_nontrivial_test_samples, test_set)
-        # num_corr_nontrivial = test_acc_nontrivial * n_nontrivial_test_samples
-        test_acc = 1.0#(num_corr_nontrivial + n_trivial_test_samples) / test_set_size
         epoch_time = time.perf_counter() - epoch_time_start
         # Print training progress
         if epoch % 1 == 0:
@@ -157,11 +152,10 @@ def main():
             "log_loss": epoch_log_loss,
             "mean_reward": epoch_reward,
             "time": epoch_time,
-            "time mwpm": time_mwpm,
-            "time sampling": time_sampling,
         })
         # Save the checkpoint after the current epoch
         save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, epoch_log_loss, checkpoint_path)
+        
     time_end = time.perf_counter()
     print(f'Total training time: {time_end - time_start:.2f}s, thereof sampling: {time_sampling:.2f}s and MWPM: {time_mwpm:.2f}s')
 if __name__ == "__main__":
