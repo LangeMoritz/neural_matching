@@ -18,7 +18,7 @@ def main():
     time_start = time.perf_counter()
     time_sampling = 0
     time_mwpm = 0
-    p = 0.0005
+    p = 0.002
     # Initialize the argument parser
     parser = argparse.ArgumentParser(description="Train the neural network with specified parameters")
     parser.add_argument('--d', type=int, required=True, help='The value of d')
@@ -52,7 +52,7 @@ def main():
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
     current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
-    name = 'd_11_d_t_11_250330_210913'#"d_" + str(d) + "_d_t_" + str(d_t) + "_" + current_datetime
+    name = 'd_5_d_t_5_250328_182009.pt'#"d_" + str(d) + "_d_t_" + str(d_t) + "_" + current_datetime
     
     checkpoint_path = 'saved_models/' + name + '.pt'
     start_epoch = 0

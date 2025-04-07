@@ -36,7 +36,7 @@ def main():
     num_samples_per_epoch = int(1e4)
     num_draws_per_sample = int(2e2)
     tot_num_samples = 0
-    stddev = torch.tensor(0.1, dtype=torch.float32)
+    stddev = torch.tensor(0.05, dtype=torch.float32)
     lr = 1e-4
     num_epochs = 500
 
@@ -57,7 +57,7 @@ def main():
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
     current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
-    name = "d_" + str(d) + "_" + current_datetime + '_' + job_id
+    name = 'd_7_250401_151249_6992490'#"d_" + str(d) + "_" + current_datetime + '_' + job_id
     
     checkpoint_path = 'saved_models_code_capacity/' + name + '.pt'
     start_epoch = 0
