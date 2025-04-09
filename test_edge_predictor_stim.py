@@ -8,19 +8,23 @@ import numpy as np
 
 def main():
     rates = np.arange(0.001, 0.006, 0.001)     # physical error rates
-    d = 7
+    d = 3
     d_t = d
     print(f'Testing d = {d}.')
     test_set_size = int(1e5)
 
-    model = EdgeWeightGNN_stim()
+    hidden_channels_GCN = [32, 64, 128, 256]
+    hidden_channels_MLP = [512, 256, 128, 64, 32]
+
+    model = EdgeWeightGNN_stim(hidden_channels_GCN = hidden_channels_GCN, hidden_channels_MLP = hidden_channels_MLP)
+    device = torch.device('cpu')
+    model.to(device)
     model.eval()
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = ("d_" + str(d))
-    accuracy_file = 'accuracies/stim_gcn_32_64_128_mlp_128_64_32_memory_x/' + name + '_accuracy.csv'
-    name = "d_" + str(d) + "_d_t_" + str(d_t) + "_p_0p002" 
-    checkpoint_path = 'saved_models/stim_gcn_32_64_128_mlp_128_64_32_memory_x/' + name + '.pt'
+    name = 'd_3_d_t_3_250407_101132'
+    accuracy_file = 'accuracy/' + name + '_accuracy.csv'
+    checkpoint_path = 'saved_models/' + name + '.pt'
     start_epoch = 0
     try:
         checkpoint = torch.load(checkpoint_path, weights_only=True)

@@ -30,7 +30,7 @@ def main():
     job_id = os.environ.get('SLURM_JOB_ID', 'unknown')  # Default to 'unknown' if not running in SLURM
 
 
-    p = 0.1
+    p = 0.05
     code = RotatedCode(d)
     print(f'Training d = {d}.')
     num_samples_per_epoch = int(1e4)
@@ -49,20 +49,15 @@ def main():
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    # mwpm = np.genfromtxt('MWPM_2D_3_11.csv', delimiter=',')
-    # d_check = mwpm[:, 0] == d
-    # p_check = np.isclose(mwpm[0, :], 0.05)
-    # mwpm_acc = 1 - mwpm[d_check, p_check][0]
-
     # Check for checkpoint and load if available
-    # generate a unique name to not overwrite other models
+    load_checkpoint_path = 'saved_models_code_capacity/d_11_250401_151300_6992492.pt'  # path of existing checkpoint
     current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
-    name = 'd_7_250401_151249_6992490'#"d_" + str(d) + "_" + current_datetime + '_' + job_id
+    name = "d_" + str(d) + "_" + current_datetime
+    save_checkpoint_path = f'saved_models_code_capacity/{name}_resume.pt'
     
-    checkpoint_path = 'saved_models_code_capacity/' + name + '.pt'
     start_epoch = 0
     try:
-        checkpoint = torch.load(checkpoint_path, weights_only=True)
+        checkpoint = torch.load(load_checkpoint_path, weights_only=True)
         start_epoch = checkpoint['epoch']  # Get the epoch from checkpoint
         model.load_state_dict(checkpoint['model_state_dict'])  # Load model weights
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])  # Load optimizer state
@@ -149,7 +144,7 @@ def main():
             "time": epoch_time,
         })
         # Save the checkpoint after the current epoch
-        save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, epoch_log_loss, checkpoint_path)
+        save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, epoch_log_loss, save_checkpoint_path)
 
     time_end = time.perf_counter()
     print(f'Total training time: {time_end - time_start:.2f}s')

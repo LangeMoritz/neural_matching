@@ -14,14 +14,18 @@ def main():
     print(f'Testing d = {d}.')
     test_set_size = int(1e5)
 
-    model = EdgeWeightGNN()
+    hidden_channels_GCN = [32, 64, 128, 256]
+    hidden_channels_MLP = [512, 256, 128, 64, 32]
+
+    model = EdgeWeightGNN(hidden_channels_GCN = hidden_channels_GCN, hidden_channels_MLP = hidden_channels_MLP)
+    device = torch.device('cpu')
+    model.to(device)
     model.eval()
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = ("d_" + str(d))
-    accuracy_file = 'accuracies/code_capacity_gcn_32_64_128_mlp_256_128_64_32/' + name + '_accuracy.csv'
-    name = ("d_" + str(d) + "_p_" + "0p01")
-    checkpoint_path = 'saved_models/code_capacity_gcn_32_64_128_mlp_256_128_64_32/' + name + '.pt'
+    name = 'd_3_250407_170810_resume'
+    accuracy_file = 'accuracy_code_capacity/' + name + '_accuracy.csv'
+    checkpoint_path = 'saved_models_code_capacity/' + name + '.pt'
     start_epoch = 0
     try:
         checkpoint = torch.load(checkpoint_path, weights_only=True)

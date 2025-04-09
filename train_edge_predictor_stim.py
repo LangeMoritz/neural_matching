@@ -18,7 +18,7 @@ def main():
     time_start = time.perf_counter()
     time_sampling = 0
     time_mwpm = 0
-    p = 0.002
+    p = 0.001
     # Initialize the argument parser
     parser = argparse.ArgumentParser(description="Train the neural network with specified parameters")
     parser.add_argument('--d', type=int, required=True, help='The value of d')
@@ -50,14 +50,14 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     # Check for checkpoint and load if available
-    # generate a unique name to not overwrite other models
+    load_checkpoint_path = 'saved_models/d_11_d_t_11_250330_210913.pt'  # path of existing checkpoint
     current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
-    name = 'd_5_d_t_5_250328_182009.pt'#"d_" + str(d) + "_d_t_" + str(d_t) + "_" + current_datetime
-    
-    checkpoint_path = 'saved_models/' + name + '.pt'
+    name = "d_" + str(d) + "_d_t_" + str(d_t) + "_" + current_datetime
+    save_checkpoint_path = f'saved_models/{name}_resume.pt'
+
     start_epoch = 0
     try:
-        checkpoint = torch.load(checkpoint_path, weights_only=True)
+        checkpoint = torch.load(load_checkpoint_path, weights_only=True)
         start_epoch = checkpoint['epoch']  # Get the epoch from checkpoint
         model.load_state_dict(checkpoint['model_state_dict'])  # Load model weights
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])  # Load optimizer state
@@ -154,7 +154,7 @@ def main():
             "time": epoch_time,
         })
         # Save the checkpoint after the current epoch
-        save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, epoch_log_loss, checkpoint_path)
+        save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, epoch_log_loss, save_checkpoint_path)
         
     time_end = time.perf_counter()
     print(f'Total training time: {time_end - time_start:.2f}s, thereof sampling: {time_sampling:.2f}s and MWPM: {time_mwpm:.2f}s')
