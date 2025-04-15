@@ -63,6 +63,6 @@ venv_vera_neural_matching/
 wandb/
 
 blossomV/
-
+build_decoder.ipynb
 ISAK/
 *.ipynb
