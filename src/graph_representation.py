@@ -19,7 +19,7 @@ def get_node_feature_matrix(syndrome, d):
     # syndromes come in shape [x_coordinate, z_coordinate]
     # get the nonzero entries (node features):
     defect_inds = np.nonzero(syndrome)
-    node_features = np.transpose(np.array(defect_inds)) / d
+    node_features = np.transpose(np.array(defect_inds))
     # find the stabilizer types (1: X, 3: Z):
     stabilizer_type = syndrome[defect_inds] == 1
     # add stabilizer type as new node feature ([1, 0]: X, [0, 1]: Z):

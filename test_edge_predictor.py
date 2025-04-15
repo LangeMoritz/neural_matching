@@ -9,7 +9,7 @@ import numpy as np
 
 def main():
     rates = np.arange(0.01, 0.21, 0.01)     # physical error rates
-    d = 5
+    d = 11
     code = RotatedCode(d)
     print(f'Testing d = {d}.')
     test_set_size = int(1e4)
@@ -23,7 +23,7 @@ def main():
     model.eval()
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = 'd_5_250407_170710_resume'
+    name = 'd_11_250409_083426_resume'
     accuracy_file = 'accuracy_code_capacity/' + name + '_1e4_accuracy.csv'
     checkpoint_path = 'saved_models_code_capacity/' + name + '.pt'
     start_epoch = 0
