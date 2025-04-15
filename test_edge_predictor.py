@@ -9,10 +9,10 @@ import numpy as np
 
 def main():
     rates = np.arange(0.01, 0.21, 0.01)     # physical error rates
-    d = 3
+    d = 5
     code = RotatedCode(d)
     print(f'Testing d = {d}.')
-    test_set_size = int(1e5)
+    test_set_size = int(1e4)
 
     hidden_channels_GCN = [32, 64, 128, 256]
     hidden_channels_MLP = [512, 256, 128, 64, 32]
@@ -23,8 +23,8 @@ def main():
     model.eval()
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = 'd_3_250407_170810_resume'
-    accuracy_file = 'accuracy_code_capacity/' + name + '_accuracy.csv'
+    name = 'd_5_250407_170710_resume'
+    accuracy_file = 'accuracy_code_capacity/' + name + '_1e4_accuracy.csv'
     checkpoint_path = 'saved_models_code_capacity/' + name + '.pt'
     start_epoch = 0
     try:

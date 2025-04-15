@@ -29,12 +29,11 @@ def main():
     # Get the SLURM job ID from the environment
     job_id = os.environ.get('SLURM_JOB_ID', 'unknown')  # Default to 'unknown' if not running in SLURM
 
-
     p = 0.05
     code = RotatedCode(d)
     print(f'Training d = {d}.')
     num_samples_per_epoch = int(1e4)
-    num_draws_per_sample = int(2e2)
+    num_draws_per_sample = int(1e1)
     tot_num_samples = 0
     stddev = torch.tensor(0.05, dtype=torch.float32)
     lr = 1e-4
@@ -50,10 +49,10 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     # Check for checkpoint and load if available
-    load_checkpoint_path = 'saved_models_code_capacity/d_11_250401_151300_6992492.pt'  # path of existing checkpoint
+    load_checkpoint_path = 'saved_models_code_capacity/nofile'  # path of existing checkpoint
     current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
-    name = "d_" + str(d) + "_" + current_datetime
-    save_checkpoint_path = f'saved_models_code_capacity/{name}_resume.pt'
+    name = "all_d_" + current_datetime
+    save_checkpoint_path = f'saved_models_code_capacity/{name}.pt'
     
     start_epoch = 0
     try:
@@ -80,6 +79,8 @@ def main():
         "hidden_channels_GCN": hidden_channels_GCN, 
         "hidden_channels_MLP": hidden_channels_MLP})
 
+    baseline = 0
+
     for epoch in range(start_epoch, num_epochs):
         epoch_time_start = time.perf_counter()
         epoch_log_loss = 0
@@ -101,10 +102,12 @@ def main():
             # Forward pass: Get sampled edge weights and their log-probabilities
             edge_index, edge_weights_mean, num_real_nodes, num_boundary_nodes = \
                 model(data.x, data.edge_index, data.edge_attr)
+                
+            # get accuracy of the means:
             train_reward = compute_mwpm_reward(edge_index, edge_weights_mean, num_real_nodes,num_boundary_nodes, data.y)
             train_acc += (train_reward + 1) / (2 * num_samples_per_epoch)
+
             sampled_edge_weights, log_probs = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev)
-            # sampled_edge_weights = torch.sigmoid(sampled_edge_weights)
             for j in range(num_draws_per_sample):
                 edge_weights_j = sampled_edge_weights[j, :]
                 reward = compute_mwpm_reward(edge_index, edge_weights_j, num_real_nodes,num_boundary_nodes, data.y)
@@ -114,9 +117,7 @@ def main():
             # Stack log-probs and rewards for averaging
             all_log_probs = torch.stack(all_log_probs)  # Shape: (num_draws_per_sample,)
             all_rewards = torch.tensor(all_rewards, dtype=torch.float32) # Shape: (num_draws_per_sample,)
-            # subtract the baseline:
-            baseline = all_rewards.mean()
-            # The loss per draw and per edge is the log-probability times the reward
+            # The loss per draw and per edge is the log-probability times the reward - baseline
             log_loss_per_draw = all_log_probs * (all_rewards - baseline) # Shape: (num_draws_per_sample, )
 
             # Compute the REINFORCE loss for each edge
@@ -127,9 +128,14 @@ def main():
             epoch_log_loss += log_loss_per_sample.item()
             epoch_reward += mean_reward_per_sample.item()
 
+        # Normalize the accumulated gradients
+        for param in model.parameters():
+            if param.grad is not None:
+                param.grad /= num_samples_per_epoch
         optimizer.step()  # Perform a single optimization step after accumulating gradients
         epoch_log_loss /= num_samples_per_epoch
         epoch_reward /= num_samples_per_epoch
+        baseline = (baseline + epoch_reward) / 2
         tot_num_samples += num_samples_per_epoch
 
         epoch_time = time.perf_counter() - epoch_time_start
@@ -142,6 +148,7 @@ def main():
             "log_loss": epoch_log_loss,
             "mean_reward": epoch_reward,
             "time": epoch_time,
+            "accuracy": train_acc,
         })
         # Save the checkpoint after the current epoch
         save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, epoch_log_loss, save_checkpoint_path)

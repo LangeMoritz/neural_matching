@@ -34,10 +34,10 @@ def main():
 
     print(f'Training d = {d}, d_t = {d_t}.')
     num_samples_per_epoch = int(1e4)
-    num_draws_per_sample = int(2e2)
+    num_draws_per_sample = int(1e1)
     tot_num_samples = 0
     stddev = torch.tensor(0.1, dtype=torch.float32, device = torch.device('cpu'))
-    lr = 1e-4
+    lr = 1e-5
     num_epochs = 500
 
     hidden_channels_GCN = [32, 64, 128, 256]
@@ -50,10 +50,10 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     # Check for checkpoint and load if available
-    load_checkpoint_path = 'saved_models/d_11_d_t_11_250330_210913.pt'  # path of existing checkpoint
+    load_checkpoint_path = 'saved_models/d_9_d_t_9_250330_210913.pt'  # path of existing checkpoint
     current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
     name = "d_" + str(d) + "_d_t_" + str(d_t) + "_" + current_datetime
-    save_checkpoint_path = f'saved_models/{name}_resume.pt'
+    save_checkpoint_path = f'saved_models/{name}_baseline_resume.pt'
 
     start_epoch = 0
     try:
@@ -80,6 +80,8 @@ def main():
         "hidden_channels_GCN": hidden_channels_GCN, 
         "hidden_channels_MLP": hidden_channels_MLP
     })
+
+    baseline = 0
 
     for epoch in range(start_epoch, num_epochs):
         epoch_time_start = time.perf_counter()
@@ -124,9 +126,7 @@ def main():
             # Stack log-probs and rewards for averaging
             all_log_probs = torch.stack(all_log_probs)  # Shape: (num_draws_per_sample,)
             all_rewards = torch.tensor(all_rewards, dtype=torch.float32, device = torch.device('cpu')) # Shape: (num_draws_per_sample,)
-            # substract the baseline:
-            baseline = all_rewards.mean()
-            # The loss per draw and per edge is the log-probability times the reward
+            # The loss per draw and per edge is the log-probability times the reward - baseline
             log_loss_per_draw = all_log_probs * (all_rewards - baseline) # Shape: (num_draws_per_sample, )
 
             # Compute the REINFORCE loss for each edge
@@ -137,9 +137,14 @@ def main():
             epoch_log_loss += log_loss_per_sample.item()
             epoch_reward += mean_reward_per_sample.item()
 
+        # Normalize the accumulated gradients
+        for param in model.parameters():
+            if param.grad is not None:
+                param.grad /= num_samples_per_epoch
         optimizer.step()  # Perform a single optimization step after accumulating gradients
         epoch_log_loss /= num_samples_per_epoch
         epoch_reward /= num_samples_per_epoch
+        baseline = (baseline + epoch_reward) / 2
         tot_num_samples += num_samples_per_epoch
 
         epoch_time = time.perf_counter() - epoch_time_start
@@ -152,6 +157,7 @@ def main():
             "log_loss": epoch_log_loss,
             "mean_reward": epoch_reward,
             "time": epoch_time,
+            "accuracy": train_acc,
         })
         # Save the checkpoint after the current epoch
         save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, epoch_log_loss, save_checkpoint_path)
@@ -160,4 +166,3 @@ def main():
     print(f'Total training time: {time_end - time_start:.2f}s, thereof sampling: {time_sampling:.2f}s and MWPM: {time_mwpm:.2f}s')
 if __name__ == "__main__":
     main()
-
