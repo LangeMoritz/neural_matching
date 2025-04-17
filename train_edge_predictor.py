@@ -29,7 +29,7 @@ def main():
     # Get the SLURM job ID from the environment
     job_id = os.environ.get('SLURM_JOB_ID', 'unknown')  # Default to 'unknown' if not running in SLURM
 
-    p = 0.05
+    p = [0.01, 0.05, 0.1, 0.15]  # physical error rates
     code = RotatedCode(d)
     print(f'Training d = {d}.')
     num_samples_per_epoch = int(1e4)
@@ -37,10 +37,10 @@ def main():
     tot_num_samples = 0
     stddev = torch.tensor(0.05, dtype=torch.float32)
     lr = 1e-4
-    num_epochs = 500
+    num_epochs = 1000
 
     hidden_channels_GCN = [32, 64, 128, 256]
-    hidden_channels_MLP = [512, 256, 128, 64, 32]
+    hidden_channels_MLP = [512, 128, 64]
 
     model = EdgeWeightGNN(hidden_channels_GCN = hidden_channels_GCN, hidden_channels_MLP = hidden_channels_MLP)
     device = torch.device('cpu')
@@ -51,7 +51,7 @@ def main():
     # Check for checkpoint and load if available
     load_checkpoint_path = 'saved_models_code_capacity/nofile'  # path of existing checkpoint
     current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
-    name = "all_d_" + current_datetime
+    name = 'd' + str(d) + '_' + current_datetime + '_' + job_id
     save_checkpoint_path = f'saved_models_code_capacity/{name}.pt'
     
     start_epoch = 0
@@ -90,7 +90,8 @@ def main():
         # initiate the dataset:
         graph_list = []
         while len(graph_list) < num_samples_per_epoch:
-            graph = get_syndrome_graph(code, p)
+            p_one_sample = np.random.choice(p)
+            graph = get_syndrome_graph(code, p_one_sample)
             if not graph == None:
                 graph_list.append(graph)
 

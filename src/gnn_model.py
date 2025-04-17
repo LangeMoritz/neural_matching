@@ -211,16 +211,23 @@ class EdgeWeightGNN(nn.Module):
                 GraphConv(in_channels, out_channels)
                 for (in_channels, out_channels) in zip(channels[:-1], channels[1:])
             ])
-        # Edge embedding MLP:
-        self.edge_embedding_mlp = nn.Sequential(
-            nn.Linear(2 * hidden_channels_GCN[-1] + 1, hidden_channels_MLP[0]),
-            nn.ReLU())
-        # Dense layers
-        self.dense_layers = nn.ModuleList(
-            [
-                nn.Linear(in_channels, out_channels)
-                for (in_channels, out_channels) in zip(hidden_channels_MLP[:-1], hidden_channels_MLP[1:])
-            ])
+        
+        # Dense layers: one for each of the three edge types: internal, left, right
+        self.dense_layers_internal = nn.ModuleList([
+            nn.Linear(2 * hidden_channels_GCN[-1], hidden_channels_MLP[0])] +
+            [nn.Linear(in_c, out_c) for in_c, out_c in zip(hidden_channels_MLP[:-1], hidden_channels_MLP[1:])] + 
+            [nn.Linear(hidden_channels_MLP[-1], 1)])
+        
+        self.dense_layers_left = nn.ModuleList([
+            nn.Linear(2 * hidden_channels_GCN[-1], hidden_channels_MLP[0])] +
+            [nn.Linear(in_c, out_c) for in_c, out_c in zip(hidden_channels_MLP[:-1], hidden_channels_MLP[1:])] + 
+            [nn.Linear(hidden_channels_MLP[-1], 1)])
+        
+        self.dense_layers_right = nn.ModuleList([
+            nn.Linear(2 * hidden_channels_GCN[-1], hidden_channels_MLP[0])] +
+            [nn.Linear(in_c, out_c) for in_c, out_c in zip(hidden_channels_MLP[:-1], hidden_channels_MLP[1:])] + 
+            [nn.Linear(hidden_channels_MLP[-1], 1)])
+
         # output followed by a sigmoid activation:
         self.ouput = nn.Sequential(
             nn.Linear(hidden_channels_MLP[-1], 1),
@@ -261,15 +268,33 @@ class EdgeWeightGNN(nn.Module):
         node_i = x[row]  # Node embeddings for source nodes
         node_j = x[col]  # Node embeddings for target nodes
 
-        edge_embedding = torch.cat([node_i, node_j, edge_weights], dim=-1)  # [num_edges, 2 * hidden_dim + 1]
+        edge_embedding = torch.cat([node_i, node_j], dim=-1)  # [num_edges, 2 * hidden_dim]
 
-        # Step 6: Predict edge weight mean
-        edge_weights_mean = self.edge_embedding_mlp(edge_embedding)
-        for dense in self.dense_layers:
-            edge_weights_mean = F.relu(dense(edge_weights_mean))
+        # Step 6: Predict edge weight mean (Separate edge types before passing to MLP)
+        real_node_cutoff = num_real_nodes  # since boundary nodes come after real ones
+        row, col = edge_index
+        is_internal = (row < real_node_cutoff) & (col < real_node_cutoff)
+        is_left = (row < real_node_cutoff) & (col >= real_node_cutoff) & (col < 2 * real_node_cutoff)
+        is_right = (row < real_node_cutoff) & (col >= 2 * real_node_cutoff)
+
+        # Predict separately
+        outputs = []
+        for mask, layers in zip([is_internal, is_left, is_right],
+                                [self.dense_layers_internal, self.dense_layers_left, self.dense_layers_right]):
+            if mask.sum() > 0:
+                e = edge_embedding[mask]
+                for layer in layers[:-1]:
+                    e = F.relu(layer(e))
         # Step 7: Sigmoind activation to ensure edge weights are in [0, 1]
-        edge_weights_mean = self.ouput(edge_weights_mean)
-        edge_weights_mean = edge_weights_mean.squeeze(-1)  # [num_edges]
+                e = layers[-1](e)
+                e = torch.sigmoid(e).squeeze(-1)
+                outputs.append((mask, e))
+    
+        # Allocate full tensor
+        edge_weights_mean = torch.zeros(edge_embedding.size(0), device=edge_embedding.device)
+        for mask, out in outputs:
+            edge_weights_mean[mask] = out
+    
         return edge_index, edge_weights_mean,  num_real_nodes, num_boundary_nodes
         
     
