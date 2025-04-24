@@ -9,13 +9,13 @@ import numpy as np
 
 def main():
     rates = np.arange(0.01, 0.21, 0.01)     # physical error rates
-    d = 3
+    d = 5
     code = RotatedCode(d)
     print(f'Testing d = {d}.')
-    test_set_size = int(1e3)
+    test_set_size = int(1e2)
 
     hidden_channels_GCN = [32, 64, 128, 256]
-    hidden_channels_MLP = [512, 256, 128, 64, 32]
+    hidden_channels_MLP = [512, 128, 64]
 
     model = EdgeWeightGNN(hidden_channels_GCN = hidden_channels_GCN, hidden_channels_MLP = hidden_channels_MLP)
     device = torch.device('cpu')
@@ -23,7 +23,7 @@ def main():
     model.eval()
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = 'd_5_250407_170710_resums'
+    name = 'd5_Y_biased_250417_152339_7011586_resum'
     accuracy_file = 'accuracies/vera_code_cap/' + name + '_1e5_eta_10.csv'
     checkpoint_path = 'saved_models/vera_code_cap/' + name + '.pt'
     start_epoch = 0
@@ -50,7 +50,6 @@ def main():
         n_trivial_test_samples = test_set_size - n_nontrivial_test_samples
 
         test_acc_nontrivial = test_model(model, n_nontrivial_test_samples, test_set)
-        break
         num_corr_nontrivial = test_acc_nontrivial * n_nontrivial_test_samples
         test_acc = (num_corr_nontrivial + n_trivial_test_samples) / test_set_size
         print(f'Physical error rate: {p:.4f}, Logical failure rate: {1 -test_acc:.4f}, Logical accuracy: {test_acc:.4f}')

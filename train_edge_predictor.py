@@ -1,6 +1,6 @@
 from src.rotated_surface_code import RotatedCode
 from src.graph_representation import get_syndrome_graph
-from src.mwpm_prediction import compute_mwpm_reward
+from src.mwpm_prediction import compute_mwpm_reward, compute_mwpm_rewards_multiple_draws
 from src.gnn_model import EdgeWeightGNN, sample_weights_get_log_probs
 from src.utils import test_model, save_checkpoint
 import torch
@@ -33,7 +33,7 @@ def main():
     code = RotatedCode(d)
     print(f'Training d = {d}.')
     num_samples_per_epoch = int(1e4)
-    num_draws_per_sample = int(1e1)
+    num_draws_per_sample = int(2e2)
     tot_num_samples = 0
     stddev = torch.tensor(0.05, dtype=torch.float32)
     lr = 1e-4
@@ -108,15 +108,9 @@ def main():
             train_reward = compute_mwpm_reward(edge_index, edge_weights_mean, num_real_nodes,num_boundary_nodes, data.y)
             train_acc += (train_reward + 1) / (2 * num_samples_per_epoch)
 
-            sampled_edge_weights, log_probs = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev)
-            for j in range(num_draws_per_sample):
-                edge_weights_j = sampled_edge_weights[j, :]
-                reward = compute_mwpm_reward(edge_index, edge_weights_j, num_real_nodes,num_boundary_nodes, data.y)
-                # Store log-probabilities and rewards
-                all_log_probs.append(log_probs[j])
-                all_rewards.append(reward)
+            sampled_edge_weights, all_log_probs = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev)
+            all_rewards = compute_mwpm_rewards_multiple_draws(edge_index, sampled_edge_weights, num_real_nodes, num_boundary_nodes, data.y)
             # Stack log-probs and rewards for averaging
-            all_log_probs = torch.stack(all_log_probs)  # Shape: (num_draws_per_sample,)
             all_rewards = torch.tensor(all_rewards, dtype=torch.float32) # Shape: (num_draws_per_sample,)
             # The loss per draw and per edge is the log-probability times the reward - baseline
             log_loss_per_draw = all_log_probs * (all_rewards - baseline) # Shape: (num_draws_per_sample, )
