@@ -9,10 +9,10 @@ import numpy as np
 
 def main():
     rates = np.arange(0.01, 0.21, 0.01)     # physical error rates
-    d = 5
+    d = 3
     code = RotatedCode(d)
     print(f'Testing d = {d}.')
-    test_set_size = int(1e2)
+    test_set_size = int(1e5)
 
     hidden_channels_GCN = [32, 64, 128, 256]
     hidden_channels_MLP = [512, 128, 64]
@@ -23,7 +23,7 @@ def main():
     model.eval()
     # Check for checkpoint and load if available
     # generate a unique name to not overwrite other models
-    name = 'd5_Y_biased_250417_152339_7011586_resum'
+    name = 'd3_250425_163528_Y_biased_7026769_resume_7029590_resume_7032885'
     accuracy_file = 'accuracies/vera_code_cap/' + name + '_1e5_eta_10.csv'
     checkpoint_path = 'saved_models/vera_code_cap/' + name + '.pt'
     start_epoch = 0

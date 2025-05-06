@@ -1,6 +1,6 @@
 import numpy as np
 import networkx as nx
-from qecsim.graphtools import mwpm, mwpm_multi
+from qecsim.graphtools import mwpm, mwpm_multi, mwpm_multi_syndromes
 import itertools
 
 def compute_mwpm_reward(edge_index, edge_weights, num_real_nodes, num_boundary_nodes, logical_class):
@@ -55,6 +55,70 @@ def compute_mwpm_reward(edge_index, edge_weights, num_real_nodes, num_boundary_n
     reward = 1 if correct_prediction else -1
     
     return reward
+
+def compute_mwpm_rewards_multi_syndrome(syndrome_graphs, num_real_nodes_list, num_boundary_nodes_list, logical_classes, scale_max=10000):
+    """
+    Args:
+        syndrome_graphs: list of (edge_index, edge_weights_draws), where edge_weights_draws has shape (num_draws, num_edges)
+        num_real_nodes_list: list of integers
+        num_boundary_nodes_list: list of integers
+        logical_classes: list of integers (0 or 1)
+
+    Returns:
+        rewards: np.ndarray of shape (num_draws, num_syndromes)
+    """
+    all_graphs = []
+    for (edge_index, edge_weights_draws), num_real_nodes, num_boundary_nodes in zip(syndrome_graphs, num_real_nodes_list, num_boundary_nodes_list):
+        edge_index_np = edge_index.cpu().detach().numpy()
+        weights_np = edge_weights_draws.cpu().detach().numpy().T  # shape (num_edges, num_draws)
+        # Construct base graph
+        edges = list(map(tuple, edge_index_np.T))
+        base_graph = {e: 0 for e in edges}  # dummy weights
+
+        # Add edges between boundary nodes
+        boundary_nodes = np.arange(num_real_nodes, num_real_nodes + num_boundary_nodes)
+        for u, v in itertools.combinations(boundary_nodes, 2):
+            base_graph[(u, v)] = 0
+
+        # Create extended edge index
+        all_edges = list(base_graph.keys())
+        edge_index_full = np.array(all_edges).T.astype(np.int32)
+
+        # Extend weights with zeros for boundary edges
+        n_draws = weights_np.shape[1]
+        num_extra = len(all_edges) - weights_np.shape[0]
+        zero_pad = np.zeros((num_extra, n_draws), dtype=weights_np.dtype)
+        full_weights = np.vstack([weights_np, zero_pad])
+        all_graphs.append((edge_index_full, full_weights))
+
+    draws_per_syndrome = all_graphs[0][1].shape[1]
+    matches = mwpm_multi_syndromes(all_graphs, draws_per_syndrome = draws_per_syndrome)  # shape: (n_syndromes, n_draws, n_nodes)
+    n_syndromes = len(all_graphs)
+    rewards = np.ones((n_draws, n_syndromes), dtype=np.float32)
+
+
+    for s in range(n_syndromes):
+        match = matches[s]  # shape (n_draws, n_nodes)
+        n_draws, n_nodes = match.shape
+        n_real = num_real_nodes_list[s]
+        log_class = logical_classes[s]
+
+        u = np.arange(n_nodes)
+        u_broadcast = np.broadcast_to(u, (n_draws, n_nodes))
+        v = match  # shape (n_draws, n_nodes)
+
+        mask_u1 = (u_broadcast >= 0) & (u_broadcast < n_real)
+        mask_u2 = (u_broadcast >= n_real) & (u_broadcast < 2 * n_real)
+        mask_v1 = (v >= 0) & (v < n_real)
+        mask_v2 = (v >= n_real) & (v < 2 * n_real)
+
+        valid_mask = (mask_u1 & mask_v2) | (mask_v1 & mask_u2)
+        num_left_edges = np.count_nonzero(valid_mask, axis=1)
+
+        predicted_wrong = ((num_left_edges % 2) != log_class)
+        rewards[predicted_wrong, s] = -1.0
+
+    return rewards
 
 def compute_mwpm_rewards_multiple_draws(edge_index, edge_weights_draws, num_real_nodes, num_boundary_nodes, logical_class):
     """

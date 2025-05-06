@@ -9,8 +9,8 @@ import numpy as np
 import os
 import time
 from datetime import datetime
-# python -m cProfile -o figures_and_outputs/multi_syndromes.prof train_edge_predictor.py
-# snakeviz figures_and_outputs/multi_syndromes.prof
+# python -m cProfile -o figures_and_outputs/multi_draws.prof train_edge_predictor.py
+# snakeviz figures_and_outputs/multi_draws.prof
 import wandb
 os.environ["WANDB_SILENT"] = "True"
 
@@ -83,6 +83,8 @@ def main():
 
     for epoch in range(start_epoch, num_epochs):
         epoch_time_start = time.perf_counter()
+        epoch_log_loss = 0
+        epoch_reward = 0
         optimizer.zero_grad()
 
         # initiate the dataset:
@@ -93,54 +95,48 @@ def main():
             if not graph == None:
                 graph_list.append(graph)
 
-        all_sampled_weights = []
-        all_edge_indices = []
-        all_num_real_nodes = []
-        all_num_boundary_nodes = []
-        all_logical_classes = []
-        all_log_probs = []
-
-        for data in graph_list:
-
-            # Forward pass: Get edge weights and number of real and boundary nodes
+        train_acc = 0
+        for i in range(num_samples_per_epoch):  # Draw multiple samples per epoch
+            data = graph_list[i]
+            all_log_probs = []
+            all_rewards = []
+            # Forward pass: Get sampled edge weights and their log-probabilities
             edge_index, edge_weights_mean, num_real_nodes, num_boundary_nodes = \
                 model(data.x, data.edge_index, data.edge_attr)
+                
+            # get accuracy of the means:
+            train_reward = compute_mwpm_reward(edge_index, edge_weights_mean, num_real_nodes,num_boundary_nodes, data.y)
+            train_acc += (train_reward + 1) / (2 * num_samples_per_epoch)
 
-            sampled_edge_weights, log_probs_per_sample = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev)
+            sampled_edge_weights, all_log_probs = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev)
+            all_rewards = compute_mwpm_rewards_multiple_draws(edge_index, sampled_edge_weights, num_real_nodes, num_boundary_nodes, data.y)
+            # Stack log-probs and rewards for averaging
+            all_rewards = torch.tensor(all_rewards, dtype=torch.float32) # Shape: (num_draws_per_sample,)
+            # The loss per draw and per edge is the log-probability times the reward - baseline
+            log_loss_per_draw = all_log_probs * (all_rewards - baseline) # Shape: (num_draws_per_sample, )
 
-            all_edge_indices.append(edge_index.cpu())
-            all_sampled_weights.append(sampled_edge_weights.cpu())
-            all_num_real_nodes.append(num_real_nodes)
-            all_num_boundary_nodes.append(num_boundary_nodes)
-            all_logical_classes.append(int(data.y))
-            all_log_probs.append(log_probs_per_sample.cpu())
+            # Compute the REINFORCE loss for each edge
+            # maximize the reward, so minimize - reward
+            log_loss_per_sample = -torch.mean(log_loss_per_draw)  # Shape: (1,)
+            mean_reward_per_sample = torch.mean(all_rewards)
+            log_loss_per_sample.backward()  # Accumulate gradients
+            epoch_log_loss += log_loss_per_sample.item()
+            epoch_reward += mean_reward_per_sample.item()
 
-        syndrome_graphs = list(zip(all_edge_indices, all_sampled_weights))
-        rewards = compute_mwpm_rewards_multi_syndrome(
-                        syndrome_graphs,
-                        all_num_real_nodes,
-                        all_num_boundary_nodes,
-                        all_logical_classes
-                    )  # shape: (num_draws, num_syndromes)
-
-        rewards = torch.tensor(rewards, dtype=torch.float32) # Shape: (num_draws_per_sample, num_samples_per_epoch)
-        all_log_probs = torch.stack(all_log_probs, dim=1) # Shape: (num_draws_per_sample, num_samples_per_epoch)
-        # The loss per draw and per edge is the log-probability times the reward - baseline
-        all_expected_reward_gradients = - all_log_probs * (rewards - baseline)
-
-        epoch_reward = torch.mean(rewards).item()
-        epoch_expected_reward_gradient = torch.mean(all_expected_reward_gradients)
-    
-        epoch_expected_reward_gradient.backward()
-
+        # Normalize the accumulated gradients
+        for param in model.parameters():
+            if param.grad is not None:
+                param.grad /= num_samples_per_epoch
         optimizer.step()  # Perform a single optimization step after accumulating gradients
+        epoch_log_loss /= num_samples_per_epoch
+        epoch_reward /= num_samples_per_epoch
         baseline = (baseline + epoch_reward) / 2
         tot_num_samples += num_samples_per_epoch
 
         epoch_time = time.perf_counter() - epoch_time_start
         # Print training progress
         if epoch % 1 == 0:
-            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_expected_reward_gradient:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Baseline: {baseline}, Time: {epoch_time:.2f} seconds')
+            print(f'Epoch [{epoch}/{num_epochs}], Log-Loss: {epoch_log_loss:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Accuracy: {train_acc:.4f}, Time: {epoch_time:.2f} seconds')
         # Log to wandb
         # wandb.log({
         #     "epoch": epoch,
