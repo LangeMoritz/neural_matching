@@ -398,7 +398,7 @@ def sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev
         means: The predicted means from the GNN.
         stdev: the standard deviation of the policy
     Returns:
-        sampled_edge_weights: The sampled edge weights.
+        sampled_edge_weights: The sampled edge weights. shape: (num_draws_per_sample, num_edges)
         log_probs: The log-probabilities of the sampled edge weights
     '''
     num_edges = edge_weights_mean.shape[0]

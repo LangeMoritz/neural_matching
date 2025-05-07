@@ -28,12 +28,12 @@ def main():
 
     # # Get the SLURM job ID from the environment
     # job_id = os.environ.get('SLURM_JOB_ID', 'unknown')  # Default to 'unknown' if not running in SLURM
-    d = 3
+    d = 5
     p = [0.01, 0.05, 0.1, 0.15]  # physical error rates
     code = RotatedCode(d)
     print(f'Training d = {d}.')
-    num_samples_per_epoch = int(1e4)
-    num_draws_per_sample = int(2e2)
+    num_samples_per_epoch = int(1e2)
+    num_draws_per_sample = int(100)
     tot_num_samples = 0
     stddev = torch.tensor(0.05, dtype=torch.float32)
     lr = 1e-4
@@ -49,7 +49,7 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     # Check for checkpoint and load if available
-    load_checkpoint_path = '/Users/xlmori/Desktop/neural_matching/saved_models/vera_code_cap/d5_Y_biased_250417_152339_7011586_resumes.pt'  # path of existing checkpoint
+    load_checkpoint_path = '/Users/xlmori/Desktop/neural_matching/saved_models/vera_code_cap/d3_250425_163528_Y_biased_7026769_resume_7029590.Xpt'  # path of existing checkpoint
     # current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
     # name = 'd' + str(d) + '_' + current_datetime + '_' + job_id
     # save_checkpoint_path = f'saved_models_code_capacity/{name}.pt'
@@ -85,45 +85,43 @@ def main():
         epoch_time_start = time.perf_counter()
         optimizer.zero_grad()
 
-        # initiate the dataset:
-        graph_list = []
-        while len(graph_list) < num_samples_per_epoch:
-            p_one_sample = np.random.choice(p)
-            graph = get_syndrome_graph(code, p_one_sample)
-            if not graph == None:
-                graph_list.append(graph)
-
-        all_sampled_weights = []
-        all_edge_indices = []
         all_num_real_nodes = []
         all_num_boundary_nodes = []
         all_logical_classes = []
         all_log_probs = []
 
-        for data in graph_list:
+        # initiate the dataset:
+        graph_list = []
+        edge_shape = 0 
+        while len(graph_list) < num_samples_per_epoch:
+            p_one_sample = np.random.choice(p)
+            graph = get_syndrome_graph(code, p_one_sample)
+            if not graph == None:
+                # Forward pass: Get edge weights and number of real and boundary nodes
+                edge_index, edge_weights_mean, num_real_nodes, num_boundary_nodes = \
+                    model(graph.x, graph.edge_index, graph.edge_attr)
 
-            # Forward pass: Get edge weights and number of real and boundary nodes
-            edge_index, edge_weights_mean, num_real_nodes, num_boundary_nodes = \
-                model(data.x, data.edge_index, data.edge_attr)
-
-            sampled_edge_weights, log_probs_per_sample = sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev)
-
-            all_edge_indices.append(edge_index.cpu())
-            all_sampled_weights.append(sampled_edge_weights.cpu())
-            all_num_real_nodes.append(num_real_nodes)
-            all_num_boundary_nodes.append(num_boundary_nodes)
-            all_logical_classes.append(int(data.y))
-            all_log_probs.append(log_probs_per_sample.cpu())
-
-        syndrome_graphs = list(zip(all_edge_indices, all_sampled_weights))
+                sampled_edge_weights, log_probs_per_sample = sample_weights_get_log_probs(edge_weights_mean,
+                                                                                          num_draws_per_sample,
+                                                                                          stddev)
+                                                                                # shape: (num_draws_per_sample, num_edges)
+                graph_list.append((edge_index.cpu().numpy(), sampled_edge_weights.cpu().numpy()))
+                all_num_real_nodes.append(num_real_nodes)
+                all_num_boundary_nodes.append(num_boundary_nodes)
+                all_logical_classes.append(int(graph.y))
+                all_log_probs.append(log_probs_per_sample)
+                # if edge_index.shape[1] == edge_shape:
+                #     print("Edge shape is the same as before.")
+                # edge_shape = edge_index.shape[1]
         rewards = compute_mwpm_rewards_multi_syndrome(
-                        syndrome_graphs,
+                        graph_list,
                         all_num_real_nodes,
                         all_num_boundary_nodes,
-                        all_logical_classes
-                    )  # shape: (num_draws, num_syndromes)
-
-        rewards = torch.tensor(rewards, dtype=torch.float32) # Shape: (num_draws_per_sample, num_samples_per_epoch)
+                        all_logical_classes,
+                        num_draws_per_sample,
+                        num_samples_per_epoch
+                    )  # shape: (num_draws, num_samples_per_epoch)
+        # print(rewards)
         all_log_probs = torch.stack(all_log_probs, dim=1) # Shape: (num_draws_per_sample, num_samples_per_epoch)
         # The loss per draw and per edge is the log-probability times the reward - baseline
         all_expected_reward_gradients = - all_log_probs * (rewards - baseline)

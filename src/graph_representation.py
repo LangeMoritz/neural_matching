@@ -65,7 +65,7 @@ def get_syndrome_graph(code, p):
     d = code.size
     error = code.generate_error_chain(p)
     eq_class = code.get_eq_class(error)
-    y = torch.tensor(eq_class[1], dtype=torch.float32) # the parity of Z errors on the western edge
+    y = int(eq_class[1]) # the parity of Z errors on the western edge
     syndrome = code.get_syndrome(error)
     # check number of X stabilizers:
     if np.sum(syndrome == 1) == 0:
