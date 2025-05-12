@@ -1,81 +1,98 @@
-Training d = 3.
-No checkpoint found, starting from scratch.
-Epoch [0/2], Log-Loss: 0.4944, Mean Reward: 0.1840, No. Samples: 10000, Accuracy: 0, Time: 16.42 seconds
-Epoch [1/2], Log-Loss: 0.3324, Mean Reward: 0.2008, No. Samples: 20000, Accuracy: 0, Time: 17.11 seconds
-Total training time: 33.55s
-Wrote profile results to train_edge_predictor.py.lprof
 Timer unit: 1e-06 s
 
-Total time: 3.59463 s
+Total time: 8.04406 s
 File: /Users/xlmori/Desktop/neural_matching/src/mwpm_prediction.py
-Function: compute_mwpm_rewards_multi_syndrome at line 58
+Function: compute_mwpm_rewards_batched at line 8
 
 Line #      Hits         Time  Per Hit   % Time  Line Contents
 ==============================================================
-    58                                           @profile
-    59                                           def compute_mwpm_rewards_multi_syndrome(syndrome_graphs, num_real_nodes_list, num_boundary_nodes_list, logical_classes, scale_max=10000):
-    60                                               """
-    61                                               Args:
-    62                                                   syndrome_graphs: list of (edge_index, edge_weights_draws), where edge_weights_draws has shape (num_draws, num_edges)
-    63                                                   num_real_nodes_list: list of integers
-    64                                                   num_boundary_nodes_list: list of integers
-    65                                                   logical_classes: list of integers (0 or 1)
-    66                                           
-    67                                               Returns:
-    68                                                   rewards: np.ndarray of shape (num_draws, num_syndromes)
-    69                                               """
-    70         2          0.0      0.0      0.0      all_graphs = []
-    71     20002       5353.0      0.3      0.1      for (edge_index, edge_weights_draws), num_real_nodes, num_boundary_nodes in zip(syndrome_graphs, num_real_nodes_list, num_boundary_nodes_list):
-    72     20000      36096.0      1.8      1.0          edge_index_np = edge_index.cpu().detach().numpy()
-    73     20000      38938.0      1.9      1.1          weights_np = edge_weights_draws.cpu().detach().numpy().T  # shape (num_edges, num_draws)
-    74                                           
-    75                                                   # Construct base graph
-    76     20000      40665.0      2.0      1.1          edges = list(map(tuple, edge_index_np.T))
-    77     97979      20230.0      0.2      0.6          base_graph = {e: 0 for e in edges}  # dummy weights
-    78                                           
-    79                                                   # Add edges between boundary nodes
-    80     20000       9015.0      0.5      0.3          boundary_nodes = np.arange(num_real_nodes, num_real_nodes + num_boundary_nodes)
-    81    141012      29512.0      0.2      0.8          for u, v in itertools.combinations(boundary_nodes, 2):
-    82    121012      16617.0      0.1      0.5              base_graph[(u, v)] = 0
-    83                                           
-    84                                                   # Create extended edge index
-    85     20000       7859.0      0.4      0.2          all_edges = list(base_graph.keys())
-    86     20000      40531.0      2.0      1.1          edge_index_full = np.array(all_edges).T.astype(np.int32)
-    87                                           
-    88                                                   # Extend weights with zeros for boundary edges
-    89     20000       2970.0      0.1      0.1          n_draws = weights_np.shape[1]
-    90     20000       3605.0      0.2      0.1          num_extra = len(all_edges) - weights_np.shape[0]
-    91     20000      13455.0      0.7      0.4          zero_pad = np.zeros((num_extra, n_draws), dtype=weights_np.dtype)
-    92     20000      97071.0      4.9      2.7          full_weights = np.vstack([weights_np, zero_pad])
-    93                                           
-    94     20000       2878.0      0.1      0.1          all_graphs.append((edge_index_full, full_weights))
+     8                                           @profile
+     9                                           def compute_mwpm_rewards_batched(edge_index, sampled_edge_weights, graph_info, logical_classes, scale_max=10000):
+    10                                               """
+    11                                               Args:
+    12                                                   edge_index: torch.Tensor of shape [2, num_edges]
+    13                                                   sampled_edge_weights: torch.Tensor of shape [num_draws, num_edges]
+    14                                                   graph_info: list of dicts with keys: 'real_start', 'left_start', 'num_real'
+    15                                                   logical_classes: list of int (0 or 1) — true logical values per graph
+    16                                                   scale_max: int — used to scale weights before integer conversion
+    17                                           
+    18                                               Returns:
+    19                                                   rewards: torch.Tensor of shape [num_draws, num_graphs], values in {+1, -1}
+    20                                               """
+    21                                           
+    22         5         68.0     13.6      0.0      edge_index_np = edge_index.cpu().numpy()
+    23         5         10.0      2.0      0.0      weights_np = sampled_edge_weights.cpu().numpy()  # shape: [num_draws, num_edges]
+    24         5          6.0      1.2      0.0      logical_classes = logical_classes.cpu().numpy()
+    25                                           
+    26                                               # Start from existing edge list
+    27         5       6808.0   1361.6      0.1      edges = list(map(tuple, edge_index_np.T))
+    28     19455       3958.0      0.2      0.0      base_graph = {e: 0 for e in edges}
+    29         5        107.0     21.4      0.0      max_node_id = int(edge_index_np.max())  # track to assign new node indices
+    30      5005        853.0      0.2      0.0      for info in graph_info:
+    31      5000        567.0      0.1      0.0          ls = info['left_start']
+    32      5000        446.0      0.1      0.0          num_boundary = info['num_boundary']
+    33                                           
+    34      5000        586.0      0.1      0.0          if num_boundary % 2 == 0:
+    35                                                       # Even: connect all boundary pairs
+    36      1896        722.0      0.4      0.0              boundary_nodes = np.arange(ls, ls + num_boundary)
+    37                                                       # Add edges of weight 0 between all pairs of boundary nodes
+    38     14768       4805.0      0.3      0.1              base_graph.update({(u, v): 0 for u, v in itertools.combinations(boundary_nodes, 2)})
+    39                                                   else:
+    40                                                       # Odd: connect all except last
+    41      3104       1159.0      0.4      0.0              boundary_nodes = np.arange(ls, ls + num_boundary - 1)
+    42                                                       # Add edges of weight 0 between all pairs of boundary nodes
+    43     12508       4682.0      0.4      0.1              base_graph.update({(u, v): 0 for u, v in itertools.combinations(boundary_nodes, 2)})
+    44                                           
+    45                                                       # Add a the last boundary node at the end of the list and connect to it
+    46      3104        284.0      0.1      0.0              last_boundary_node = max_node_id + 1
+    47      3104        270.0      0.1      0.0              max_node_id += 1
+    48                                           
+    49     11112       3342.0      0.3      0.0              base_graph.update({(u, last_boundary_node): 0 for u in boundary_nodes})
+    50                                           
+    51                                               # Reconstruct extended edge_index and zero-pad edge weights accordingly
+    52         5        154.0     30.8      0.0      all_edges = list(base_graph.keys())
+    53         5       6151.0   1230.2      0.1      edge_index_full = np.array(all_edges).T.astype(np.int32)
+    54         5          4.0      0.8      0.0      num_edges_orig = weights_np.shape[1]
+    55         5          3.0      0.6      0.0      num_edges_full = len(all_edges)
+    56         5          2.0      0.4      0.0      num_draws = weights_np.shape[0]
+    57                                               
+    58                                               # Pad weights with zeros for new edges
+    59         5          2.0      0.4      0.0      pad_width = num_edges_full - num_edges_orig
+    60        10       3597.0    359.7      0.0      padded_weights = np.hstack([
+    61         5          3.0      0.6      0.0          weights_np,
+    62         5        957.0    191.4      0.0          np.zeros((num_draws, pad_width), dtype=weights_np.dtype)])
+    63                                           
+    64         5        168.0     33.6      0.0      total_nodes = np.max(edge_index_full) + 1
+    65                                               # Run MWPM on the full disconnected graph
+    66         5     523438.0 104687.6      6.5      match = run_mwpm_on_sampled_weights(edge_index_full, padded_weights, num_nodes=total_nodes, scale_max=scale_max)  # shape [num_draws, num_nodes]
+    67                                           
+    68         5          5.0      1.0      0.0      num_graphs = len(graph_info)
+    69         5          5.0      1.0      0.0      num_draws = weights_np.shape[0]
+    70         5        203.0     40.6      0.0      rewards = torch.ones((num_draws, num_graphs), dtype=torch.float32)
+    71                                               
+    72         5         34.0      6.8      0.0      u = np.arange(match.shape[1])
+    73         5        152.0     30.4      0.0      u_broadcast = np.broadcast_to(u, match.shape)  # shape (num_draws, total_num_nodes)
+    74         5          0.0      0.0      0.0      v = match  # shape (num_draws, total_num_nodes)
+    75                                               # print(u_broadcast)
+    76      5005       1226.0      0.2      0.0      for g, info in enumerate(graph_info):
+    77      5000        989.0      0.2      0.0          log_class = logical_classes[g]
+    78      5000        598.0      0.1      0.0          rs = info['real_start']
+    79      5000        488.0      0.1      0.0          ls = info['left_start']
+    80      5000        525.0      0.1      0.0          num_real = info['num_real']
+    81                                           
+    82                                                   # note: because match is symmetric, we only need to check one side:
+    83                                                   # Mask real-to-left boundary edges (global index ranges)
+    84                                           
+    85                                                   # check if u is a real node:
+    86      5000    5656879.0   1131.4     70.3          u_in_real = (u_broadcast >= rs) & (u_broadcast < rs + num_real)
+    87                                                   # check if v is a virtual node on the left boundary:
+    88      5000     735674.0    147.1      9.1          v_in_left = (v >= ls) & (v < ls + num_real)
+    89                                           
+    90                                                   # count number of edges between real and left boundary nodes:
+    91      5000    1055846.0    211.2     13.1          num_left_edges = np.count_nonzero((u_in_real & v_in_left), axis=1) # shape (num_draws,)
+    92                                               
+    93      5000       7983.0      1.6      0.1          predicted_wrong = ((num_left_edges % 2) != log_class)
+    94      5000      20289.0      4.1      0.3          rewards[predicted_wrong, g] = -1.0
     95                                           
-    96         2          5.0      2.5      0.0      draws_per_syndrome = all_graphs[0][1].shape[1]
-    97         2    2672102.0    1e+06     74.3      matches = mwpm_multi_syndromes(all_graphs, draws_per_syndrome = draws_per_syndrome)  # shape: (n_syndromes, n_draws, n_nodes)
-    98         2          3.0      1.5      0.0      n_syndromes = len(all_graphs)
-    99         2       1135.0    567.5      0.0      rewards = np.ones((n_draws, n_syndromes), dtype=np.float32)
-   100                                           
-   101                                           
-   102     20002       3028.0      0.2      0.1      for s in range(n_syndromes):
-   103     20000       2742.0      0.1      0.1          match = matches[s]  # shape (n_draws, n_nodes)
-   104     20000       2561.0      0.1      0.1          n_draws, n_nodes = match.shape
-   105     20000       1566.0      0.1      0.0          n_real = num_real_nodes_list[s]
-   106     20000       1498.0      0.1      0.0          log_class = logical_classes[s]
-   107                                           
-   108     20000       7301.0      0.4      0.2          u = np.arange(n_nodes)
-   109     20000      66758.0      3.3      1.9          u_broadcast = np.broadcast_to(u, (n_draws, n_nodes))
-   110     20000       1809.0      0.1      0.1          v = match  # shape (n_draws, n_nodes)
-   111                                           
-   112     20000     114699.0      5.7      3.2          mask_u1 = (u_broadcast >= 0) & (u_broadcast < n_real)
-   113     20000     107638.0      5.4      3.0          mask_u2 = (u_broadcast >= n_real) & (u_broadcast < 2 * n_real)
-   114     20000      42349.0      2.1      1.2          mask_v1 = (v >= 0) & (v < n_real)
-   115     20000      35725.0      1.8      1.0          mask_v2 = (v >= n_real) & (v < 2 * n_real)
-   116                                           
-   117     20000      19508.0      1.0      0.5          valid_mask = (mask_u1 & mask_v2) | (mask_v1 & mask_u2)
-   118     20000      96459.0      4.8      2.7          num_left_edges = np.sum(valid_mask, axis=1)
-   119                                           
-   120     20000      30321.0      1.5      0.8          predicted_wrong = ((num_left_edges % 2) != log_class)
-   121     20000      22623.0      1.1      0.6          rewards[predicted_wrong, s] = -1.0
-   122                                           
-   123         2          3.0      1.5      0.0      return rewards
+    96         5          9.0      1.8      0.0      return rewards
 

@@ -1,10 +1,75 @@
-"""Utility functions and layers for the FEC package."""
-
 import numpy as np
 import yaml
 import torch
 from src.mwpm_prediction import compute_mwpm_reward
-import pandas as pd 
+import pandas as pd
+
+def sample_weights_get_log_probs_batch(edge_weights_mean, edge_index, batch, num_draws_per_sample, num_samples_per_epoch, stddev):
+    '''
+    Sample edge weights and compute per-graph log-probabilities for REINFORCE, using a loop.
+
+    Args:
+        edge_weights_mean (torch.Tensor): shape [num_edges], predicted means per edge.
+        edge_index (torch.Tensor): shape [2, num_edges], edge list.
+        batch (torch.Tensor): shape [num_nodes], updated batch tensor after adding boundary nodes.
+        num_draws_per_sample (int): Number of samples per graph.
+        num_samples_per_epoch (int): Number of samples per epoch.
+        stddev (float): Standard deviation of the Gaussian sampling policy.
+
+    Returns:
+        sampled_edge_weights (torch.Tensor): shape [num_draws_per_sample, num_edges]
+        log_probs_per_graph (torch.Tensor): shape [num_draws_per_sample, num_graphs]
+    '''
+    num_edges = edge_weights_mean.shape[0]
+    # Assign each edge to a graph using the graph ID of the source node
+    edge_graph_indicator = batch[edge_index[0]]  # shape [num_edges]
+    
+    # Sample edge weights
+    with torch.no_grad():
+        epsilon = torch.randn((num_draws_per_sample, num_edges))
+        edge_weights_mean_expanded = edge_weights_mean.unsqueeze(0).expand(num_draws_per_sample, -1)
+        sampled_edge_weights = edge_weights_mean_expanded + stddev * epsilon
+
+    # Compute log-probs per edge
+    log_probs_per_edge = - (sampled_edge_weights - edge_weights_mean_expanded)**2 / (2 * stddev**2)
+
+    # Sum log-probs per graph
+    log_probs_per_graph = torch.zeros((num_draws_per_sample, num_samples_per_epoch))
+    for g in range(num_samples_per_epoch):
+        edge_mask = (edge_graph_indicator == g)
+        log_probs_per_graph[:, g] = log_probs_per_edge[:, edge_mask].sum(dim=1)
+    # have shape (num_draws_per_sample, num_all_edges) and (num_draws_per_sample, num_samples_per_epoch)
+    return sampled_edge_weights, log_probs_per_graph
+
+
+def sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev):
+    '''
+    Compute the log-probabilities of the sampled edge weights.
+    This is based on the Gaussian distribution with the predicted mean and stddev.
+    Args:
+        means: The predicted means from the GNN.
+        stdev: the standard deviation of the policy
+    Returns:
+        sampled_edge_weights: The sampled edge weights. shape: (num_draws_per_sample, num_edges)
+        log_probs: The log-probabilities of the sampled edge weights
+    '''
+    num_edges = edge_weights_mean.shape[0]
+    # Expand edge weights mean to match the number of draws per sample
+    edge_weights_mean = edge_weights_mean.repeat(num_draws_per_sample, 1)
+    # Sample from the Gaussian distribution (mean, stddev)
+    with torch.no_grad():
+        epsilon = torch.randn((num_draws_per_sample, num_edges))  # Standard normal noise
+        sampled_edge_weights = edge_weights_mean + stddev * epsilon  # Sampled edge weights
+    # Compute log-probabilities for the REINFORCE update
+    # Log probability of the sampled value under the Gaussian distribution
+    log_probs = - (sampled_edge_weights - edge_weights_mean)**2 / (2 * stddev**2)
+    
+    # Sum over all edge weights (shape (num_draws_per_sample,))
+    log_probs = torch.sum(log_probs, dim=1)
+
+    return sampled_edge_weights, log_probs
+
+
 def get_acc_from_csv(file_path, d, d_t, p):
     """
     Reads the CSV file and returns the 'acc' value for the given d, d_t, and p.

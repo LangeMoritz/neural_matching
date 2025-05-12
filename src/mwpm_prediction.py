@@ -1,8 +1,100 @@
 import numpy as np
 import networkx as nx
-from qecsim.graphtools import mwpm, mwpm_multi, mwpm_multi_syndromes
+from qecsim.graphtools import mwpm, mwpm_multi, mwpm_multi_syndromes, run_mwpm_on_sampled_weights
 import itertools
-import torch 
+import torch
+import numpy as np
+
+@profile
+def compute_mwpm_rewards_batched(edge_index, sampled_edge_weights, graph_info, logical_classes, scale_max=10000):
+    """
+    Args:
+        edge_index: torch.Tensor of shape [2, num_edges]
+        sampled_edge_weights: torch.Tensor of shape [num_draws, num_edges]
+        graph_info: list of dicts with keys: 'real_start', 'left_start', 'num_real'
+        logical_classes: list of int (0 or 1) — true logical values per graph
+        scale_max: int — used to scale weights before integer conversion
+
+    Returns:
+        rewards: torch.Tensor of shape [num_draws, num_graphs], values in {+1, -1}
+    """
+
+    edge_index_np = edge_index.cpu().numpy()
+    weights_np = sampled_edge_weights.cpu().numpy()  # shape: [num_draws, num_edges]
+    logical_classes = logical_classes.cpu().numpy()
+
+    # Start from existing edge list
+    edges = list(map(tuple, edge_index_np.T))
+    base_graph = {e: 0 for e in edges}
+    max_node_id = int(edge_index_np.max())  # track to assign new node indices
+    for info in graph_info:
+        ls = info['left_start']
+        num_boundary = info['num_boundary']
+
+        if num_boundary % 2 == 0:
+            # Even: connect all boundary pairs
+            boundary_nodes = np.arange(ls, ls + num_boundary)
+            # Add edges of weight 0 between all pairs of boundary nodes
+            base_graph.update({(u, v): 0 for u, v in itertools.combinations(boundary_nodes, 2)})
+        else:
+            # Odd: connect all except last
+            boundary_nodes = np.arange(ls, ls + num_boundary - 1)
+            # Add edges of weight 0 between all pairs of boundary nodes
+            base_graph.update({(u, v): 0 for u, v in itertools.combinations(boundary_nodes, 2)})
+
+            # Add a the last boundary node at the end of the list and connect to it
+            last_boundary_node = max_node_id + 1
+            max_node_id += 1
+
+            base_graph.update({(u, last_boundary_node): 0 for u in boundary_nodes})
+
+    # Reconstruct extended edge_index and zero-pad edge weights accordingly
+    all_edges = list(base_graph.keys())
+    edge_index_full = np.array(all_edges).T.astype(np.int32)
+    num_edges_orig = weights_np.shape[1]
+    num_edges_full = len(all_edges)
+    num_draws = weights_np.shape[0]
+    
+    # Pad weights with zeros for new edges
+    pad_width = num_edges_full - num_edges_orig
+    padded_weights = np.hstack([
+        weights_np,
+        np.zeros((num_draws, pad_width), dtype=weights_np.dtype)])
+
+    total_nodes = np.max(edge_index_full) + 1
+    # Run MWPM on the full disconnected graph
+    match = run_mwpm_on_sampled_weights(edge_index_full, padded_weights, num_nodes=total_nodes, scale_max=scale_max)  # shape [num_draws, num_nodes]
+
+    num_graphs = len(graph_info)
+    num_draws = weights_np.shape[0]
+    rewards = torch.ones((num_draws, num_graphs), dtype=torch.float32)
+    
+    u = np.arange(match.shape[1])
+    u_broadcast = np.broadcast_to(u, match.shape)  # shape (num_draws, total_num_nodes)
+    v = match  # shape (num_draws, total_num_nodes)
+    # print(u_broadcast)
+    for g, info in enumerate(graph_info):
+        log_class = logical_classes[g]
+        rs = info['real_start']
+        ls = info['left_start']
+        num_real = info['num_real']
+
+        # note: because match is symmetric, we only need to check one side:
+        # Mask real-to-left boundary edges (global index ranges)
+
+        # check if u is a real node:
+        u_in_real = (u_broadcast >= rs) & (u_broadcast < rs + num_real)
+        # check if v is a virtual node on the left boundary:
+        v_in_left = (v >= ls) & (v < ls + num_real)
+
+        # count number of edges between real and left boundary nodes:
+        num_left_edges = np.count_nonzero((u_in_real & v_in_left), axis=1) # shape (num_draws,)
+    
+        predicted_wrong = ((num_left_edges % 2) != log_class)
+        rewards[predicted_wrong, g] = -1.0
+
+    return rewards
+
 
 def compute_mwpm_reward(edge_index, edge_weights, num_real_nodes, num_boundary_nodes, logical_class):
     """
