@@ -34,6 +34,7 @@
 *.swp
 *.log
 *.pdf
+*.txt
 *~
 *(Autosaved).rtfd/
 Backup[ ]of[ ]*.pages/

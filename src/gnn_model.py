@@ -460,11 +460,6 @@ class EdgeWeightGNN_batch(nn.Module):
             nn.Linear(2 * hidden_channels_GCN[-1], hidden_channels_MLP[0])] +
             [nn.Linear(in_c, out_c) for in_c, out_c in zip(hidden_channels_MLP[:-1], hidden_channels_MLP[1:])] + 
             [nn.Linear(hidden_channels_MLP[-1], 1)])
-
-        # output followed by a sigmoid activation:
-        self.ouput = nn.Sequential(
-            nn.Linear(hidden_channels_MLP[-1], 1),
-            nn.Sigmoid())
         
     def forward(self, x, edge_index, edge_weights, batch):
         """
@@ -503,9 +498,9 @@ class EdgeWeightGNN_batch(nn.Module):
 
         # Step 6: Predict edge weight mean (Separate edge types before passing to MLP)
         row, col = edge_index
-        is_internal = torch.zeros(row.shape[0], dtype=torch.bool)
-        is_left = torch.zeros(row.shape[0], dtype=torch.bool)
-        is_right = torch.zeros(row.shape[0], dtype=torch.bool)
+        is_internal = torch.zeros(row.shape[0], dtype=torch.bool, device=row.device)
+        is_left = torch.zeros(row.shape[0], dtype=torch.bool, device=row.device)
+        is_right = torch.zeros(row.shape[0], dtype=torch.bool, device=row.device)
 
         for info in graph_info:
             r_start = info['real_start']
@@ -548,7 +543,7 @@ class EdgeWeightGNN_batch(nn.Module):
                 outputs.append((mask, e))
     
         # Allocate full tensor
-        edge_weights_mean = torch.zeros(edge_embedding.size(0))
+        edge_weights_mean = torch.zeros(edge_embedding.size(0), device=edge_embedding.device)
         for mask, out in outputs:
             edge_weights_mean[mask] = out
     
@@ -632,7 +627,7 @@ class EdgeWeightGNN_batch(nn.Module):
         graph_info = []
 
         real_node_offsets = torch.cat([
-            torch.tensor([0], device=real_node_counts.device),
+            torch.tensor([0], device=device),
             torch.cumsum(real_node_counts[:-1], dim=0)
         ])
 

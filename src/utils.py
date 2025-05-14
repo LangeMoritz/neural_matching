@@ -13,7 +13,7 @@ def sample_weights_get_log_probs_batch(edge_weights_mean, edge_index, batch, num
         edge_index (torch.Tensor): shape [2, num_edges], edge list.
         batch (torch.Tensor): shape [num_nodes], updated batch tensor after adding boundary nodes.
         num_draws_per_sample (int): Number of samples per graph.
-        num_samples_per_epoch (int): Number of samples per epoch.
+        num_samples_per_epoch (int): Number of graphs.
         stddev (float): Standard deviation of the Gaussian sampling policy.
 
     Returns:
@@ -21,25 +21,29 @@ def sample_weights_get_log_probs_batch(edge_weights_mean, edge_index, batch, num
         log_probs_per_graph (torch.Tensor): shape [num_draws_per_sample, num_graphs]
     '''
     num_edges = edge_weights_mean.shape[0]
-    # Assign each edge to a graph using the graph ID of the source node
-    edge_graph_indicator = batch[edge_index[0]]  # shape [num_edges]
-    
-    # Sample edge weights
+    device = edge_weights_mean.device
+
+    # Assign each edge to a graph using the source node's batch assignment
+    edge_graph_indicator = batch[edge_index[0]]
+
+    # Expand edge means across samples — clone to preserve gradient tracking
+    edge_weights_mean_expanded = edge_weights_mean.repeat(num_draws_per_sample, 1)
+
+    # Sample edge weights without tracking gradient
     with torch.no_grad():
-        epsilon = torch.randn((num_draws_per_sample, num_edges))
-        edge_weights_mean_expanded = edge_weights_mean.unsqueeze(0).expand(num_draws_per_sample, -1)
+        epsilon = torch.randn((num_draws_per_sample, num_edges), device=device)
         sampled_edge_weights = edge_weights_mean_expanded + stddev * epsilon
 
-    # Compute log-probs per edge
+    # Compute log-probs w.r.t. mean — differentiable!
     log_probs_per_edge = - (sampled_edge_weights - edge_weights_mean_expanded)**2 / (2 * stddev**2)
 
-    # Sum log-probs per graph
-    log_probs_per_graph = torch.zeros((num_draws_per_sample, num_samples_per_epoch))
+    # Aggregate log-probs per graph
+    log_probs_per_graph = torch.zeros((num_draws_per_sample, num_samples_per_epoch), device=device)
     for g in range(num_samples_per_epoch):
-        edge_mask = (edge_graph_indicator == g)
-        log_probs_per_graph[:, g] = log_probs_per_edge[:, edge_mask].sum(dim=1)
-    # have shape (num_draws_per_sample, num_all_edges) and (num_draws_per_sample, num_samples_per_epoch)
+        mask = (edge_graph_indicator == g)
+        log_probs_per_graph[:, g] = log_probs_per_edge[:, mask].sum(dim=1)
     return sampled_edge_weights, log_probs_per_graph
+
 
 
 def sample_weights_get_log_probs(edge_weights_mean, num_draws_per_sample, stddev):

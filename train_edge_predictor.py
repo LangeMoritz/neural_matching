@@ -4,7 +4,6 @@ from src.mwpm_prediction import compute_mwpm_reward, compute_mwpm_rewards_multip
 from src.gnn_model import EdgeWeightGNN_batch
 from src.utils import save_checkpoint, sample_weights_get_log_probs_batch
 import torch
-import argparse
 import numpy as np
 import os
 import time
@@ -14,6 +13,7 @@ from torch_geometric.data import Batch
 # snakeviz figures_and_outputs/multi_syndromes.prof
 import wandb
 os.environ["WANDB_SILENT"] = "True"
+# @profile
 def main():
     time_start = time.perf_counter()
     # Initialize the argument parser
@@ -35,23 +35,29 @@ def main():
     num_samples_per_epoch = int(1e3)
     num_draws_per_sample = int(2e2)
     tot_num_samples = 0
-    stddev = torch.tensor(0.05, dtype=torch.float32)
-    lr = 1e-4
-    num_epochs = 5
 
-    hidden_channels_GCN = [32, 64, 128, 2]
-    hidden_channels_MLP = [2, 128, 64]
+    device = torch.device("cpu")
+    print(f"Using device: {device}")
+    stddev = torch.tensor(0.05, dtype=torch.float32, device=device)
+    lr = 1e-5
+    num_epochs = 10_000
 
-    model = EdgeWeightGNN_batch(hidden_channels_GCN = hidden_channels_GCN, hidden_channels_MLP = hidden_channels_MLP)
-    device = torch.device('cpu')
+    hidden_channels_GCN = [32, 64, 128, 256]
+    hidden_channels_MLP = [512, 128, 64]
+
+    model = EdgeWeightGNN_batch(hidden_channels_GCN = hidden_channels_GCN, hidden_channels_MLP =hidden_channels_MLP)
     model.to(device)
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     # Check for checkpoint and load if available
-    load_checkpoint_path = '/Users/xlmori/Desktop/neural_matching/saved_models/vera_code_cap/d3_250425_163528_Y_biased_7026769_resume_7029590.Xpt'  # path of existing checkpoint
-    # current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
-    # name = 'd' + str(d) + '_' + current_datetime + '_' + job_id
+    model_folder = 'saved_models_code_capacity/'
+    loaded_model_name = 'd5_250428_125713_Y_bsiased7028806'
+    load_checkpoint_path =  model_folder + loaded_model_name + '.pt'  # path of existing checkpoint
+    current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
+    save_checkpoint_name = 'd' + str(d) + '_' + current_datetime + '_Y_biased.pt'# + job_id + '.pt'
+    # save_checkpoint_name = loaded_model_name + '_resume_' + job_id + '.pt'
+    save_checkpoint_path = model_folder + save_checkpoint_name
     # save_checkpoint_path = f'saved_models_code_capacity/{name}.pt'
     
     start_epoch = 0
@@ -84,7 +90,6 @@ def main():
     for epoch in range(start_epoch, num_epochs):
         epoch_time_start = time.perf_counter()
         optimizer.zero_grad()
-
         # initiate the dataset:
         graph_list = []
         while len(graph_list) < num_samples_per_epoch:
@@ -92,14 +97,13 @@ def main():
             graph = get_syndrome_graph(code, p_one_sample)
             if not graph == None:
                 graph_list.append(graph)
-        graph_batch = Batch.from_data_list(graph_list)
-
+        graph_batch = Batch.from_data_list(graph_list).to(device)
+        
         # Forward pass: Get edge weights and number of real and boundary nodes
         edge_index, edge_weights_mean, batch, graph_info = model(graph_batch.x,
                                                           graph_batch.edge_index,
                                                           graph_batch.edge_attr,
                                                           graph_batch.batch)
-        
         # have shape (num_draws_per_sample, num_all_edges) and (num_draws_per_sample, num_samples_per_epoch)
         sampled_edge_weights, all_log_probs = sample_weights_get_log_probs_batch(
             edge_weights_mean,
@@ -115,19 +119,19 @@ def main():
                                      graph_batch.y)
         # The loss per draw and per edge is the log-probability times the reward - baseline
         all_expected_reward_gradients = - all_log_probs * (rewards - baseline)
-
         epoch_reward = torch.mean(rewards).item()
+        
         epoch_expected_reward_gradient = torch.mean(all_expected_reward_gradients)
-    
         epoch_expected_reward_gradient.backward()
+        
+        optimizer.step()
 
-        optimizer.step()  # Perform a single optimization step after accumulating gradients
         baseline = (baseline + epoch_reward) / 2
         tot_num_samples += num_samples_per_epoch
 
         epoch_time = time.perf_counter() - epoch_time_start
         # Print training progress
-        if epoch % 1 == 0:
+        if epoch % 100 == 0:
             print(f'Epoch [{epoch}/{num_epochs}]: Log-Loss: {epoch_expected_reward_gradient:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Baseline: {baseline:.4f}, Time: {epoch_time:.2f} seconds')
     #     # Log to wandb
     #     # wandb.log({

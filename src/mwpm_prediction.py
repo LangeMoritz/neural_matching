@@ -5,7 +5,6 @@ import itertools
 import torch
 import numpy as np
 
-@profile
 def compute_mwpm_rewards_batched(edge_index, sampled_edge_weights, graph_info, logical_classes, scale_max=10000):
     """
     Args:
@@ -65,34 +64,31 @@ def compute_mwpm_rewards_batched(edge_index, sampled_edge_weights, graph_info, l
     # Run MWPM on the full disconnected graph
     match = run_mwpm_on_sampled_weights(edge_index_full, padded_weights, num_nodes=total_nodes, scale_max=scale_max)  # shape [num_draws, num_nodes]
 
+    num_draws, total_nodes = match.shape
     num_graphs = len(graph_info)
-    num_draws = weights_np.shape[0]
     rewards = torch.ones((num_draws, num_graphs), dtype=torch.float32)
-    
-    u = np.arange(match.shape[1])
-    u_broadcast = np.broadcast_to(u, match.shape)  # shape (num_draws, total_num_nodes)
-    v = match  # shape (num_draws, total_num_nodes)
-    # print(u_broadcast)
+
+    # Precompute node indices once
+    u = np.arange(total_nodes)
     for g, info in enumerate(graph_info):
         log_class = logical_classes[g]
-        rs = info['real_start']
-        ls = info['left_start']
-        num_real = info['num_real']
+        rs = info["real_start"]
+        ls = info["left_start"]
+        num_real = info["num_real"]
 
-        # note: because match is symmetric, we only need to check one side:
-        # Mask real-to-left boundary edges (global index ranges)
+        # check: start node is a real node
+        real_nodes = u[(u >= rs) & (u < rs + num_real)]
 
-        # check if u is a real node:
-        u_in_real = (u_broadcast >= rs) & (u_broadcast < rs + num_real)
-        # check if v is a virtual node on the left boundary:
-        v_in_left = (v >= ls) & (v < ls + num_real)
+        # v = match[:, real_nodes]  # shape [num_draws, num_real]
+        matched_v = match[:, real_nodes]  # shape [num_draws, num_real]
+
+        # check: end node is a virtual node on the left boundary
+        v_in_left = (matched_v >= ls) & (matched_v < ls + num_real)  # shape [num_draws, num_real]
 
         # count number of edges between real and left boundary nodes:
-        num_left_edges = np.count_nonzero((u_in_real & v_in_left), axis=1) # shape (num_draws,)
-    
-        predicted_wrong = ((num_left_edges % 2) != log_class)
+        num_left_edges = np.sum(v_in_left, axis=1)  # shape [num_draws]
+        predicted_wrong = (num_left_edges % 2) != log_class
         rewards[predicted_wrong, g] = -1.0
-
     return rewards
 
 
