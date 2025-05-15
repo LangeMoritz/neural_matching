@@ -9,11 +9,12 @@ import os
 import time
 from datetime import datetime
 from torch_geometric.data import Batch
+import gc
 # python -m cProfile -o figures_and_outputs/multi_syndromes.prof train_edge_predictor.py
 # snakeviz figures_and_outputs/multi_syndromes.prof
 import wandb
 os.environ["WANDB_SILENT"] = "True"
-# @profile
+@profile
 def main():
     time_start = time.perf_counter()
     # Initialize the argument parser
@@ -32,15 +33,16 @@ def main():
     p = [0.01, 0.05, 0.1, 0.15]  # physical error rates
     code = RotatedCode(d)
     print(f'Training d = {d}.')
-    num_samples_per_epoch = int(1e3)
+    num_samples_per_epoch = int(1e4)
     num_draws_per_sample = int(2e2)
     tot_num_samples = 0
 
-    device = torch.device("cpu")
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+
     print(f"Using device: {device}")
     stddev = torch.tensor(0.05, dtype=torch.float32, device=device)
     lr = 1e-5
-    num_epochs = 10_000
+    num_epochs = 5
 
     hidden_channels_GCN = [32, 64, 128, 256]
     hidden_channels_MLP = [512, 128, 64]
@@ -131,7 +133,7 @@ def main():
 
         epoch_time = time.perf_counter() - epoch_time_start
         # Print training progress
-        if epoch % 100 == 0:
+        if epoch % 1 == 0:
             print(f'Epoch [{epoch}/{num_epochs}]: Log-Loss: {epoch_expected_reward_gradient:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Baseline: {baseline:.4f}, Time: {epoch_time:.2f} seconds')
     #     # Log to wandb
     #     # wandb.log({
@@ -143,7 +145,6 @@ def main():
     #     # })
     #     # # Save the checkpoint after the current epoch
     #     # save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, epoch_log_loss, save_checkpoint_path)
-
     time_end = time.perf_counter()
     print(f'Total training time: {time_end - time_start:.2f}s')
 if __name__ == "__main__":

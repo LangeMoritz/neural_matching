@@ -460,7 +460,7 @@ class EdgeWeightGNN_batch(nn.Module):
             nn.Linear(2 * hidden_channels_GCN[-1], hidden_channels_MLP[0])] +
             [nn.Linear(in_c, out_c) for in_c, out_c in zip(hidden_channels_MLP[:-1], hidden_channels_MLP[1:])] + 
             [nn.Linear(hidden_channels_MLP[-1], 1)])
-        
+
     def forward(self, x, edge_index, edge_weights, batch):
         """
         Args:
@@ -601,7 +601,7 @@ class EdgeWeightGNN_batch(nn.Module):
         filtered_edge_index = edge_index[:, mask]  # Apply mask to edge_index
 
         return filtered_edge_index
-    
+
     def add_boundary_edges_batch(self, edge_index, x, batch, real_node_counts):
         """
         Adds boundary nodes and edges for each graph in the batch.
@@ -633,9 +633,17 @@ class EdgeWeightGNN_batch(nn.Module):
 
         boundary_node_offset = total_real_nodes  # start of boundary nodes
 
+        # Precompute all boundary batch entries at once
+        boundary_batch_all = torch.repeat_interleave(torch.
+        arange(num_graphs, device=device), real_node_counts * 2)
+        boundary_batch_offset = 0
+
+        num_real_array = real_node_counts.tolist()
+        real_start_array = real_node_offsets.tolist()
+
         for g in range(num_graphs):
-            num_real = real_node_counts[g].item()
-            real_start = real_node_offsets[g].item()
+            num_real = num_real_array[g]
+            real_start = real_start_array[g]
             left_start = boundary_node_offset
             right_start = left_start + num_real
 
@@ -647,8 +655,10 @@ class EdgeWeightGNN_batch(nn.Module):
             right_ids = torch.arange(right_start, right_start + num_real, device=device)
 
             # Append boundary node graph IDs to batch
-            boundary_batch = torch.full((2 * num_real,), g, dtype=torch.long, device=device)
+            # Slice from precomputed tensor
+            boundary_batch = boundary_batch_all[boundary_batch_offset : boundary_batch_offset + 2 * num_real]
             batch_list.append(boundary_batch)
+            boundary_batch_offset += 2 * num_real
 
             # Boundary node features
             real_x = x[real_ids]
@@ -683,3 +693,83 @@ class EdgeWeightGNN_batch(nn.Module):
 
         return edge_index, x, batch, graph_info
 
+# def add_boundary_edges_batch(self, edge_index, x, batch, real_node_counts):
+#         """
+#         Adds boundary nodes and edges for each graph in the batch.
+
+#         Args:
+#             edge_index (torch.Tensor): [2, num_edges]
+#             x (torch.Tensor): Node features [num_nodes, feat_dim]
+#             batch (torch.Tensor): [num_nodes], graph assignment for each node
+#             real_node_counts (torch.Tensor): [num_graphs], number of real nodes per graph
+
+#         Returns:
+#             edge_index (torch.Tensor): Updated with boundary edges
+#             x (torch.Tensor): Extended with boundary node embeddings
+#             batch (torch.Tensor): Updated batch assignments
+#             graph_info (List[Dict]): Per-graph node indexing information
+#         """
+#         device = x.device
+#         feat_dim = x.size(-1)
+#         total_real_nodes = x.size(0)
+#         num_graphs = real_node_counts.size(0)
+#         total_boundary_nodes = (2 * real_node_counts).sum().item()
+#         total_new_edges = 2 * total_real_nodes
+
+#         # Preallocate boundary data
+#         x_boundary = torch.empty((total_boundary_nodes, feat_dim), device=device)
+#         edge_index_boundary = torch.empty((2, total_new_edges), dtype=torch.long, device=device)
+#         batch_boundary = torch.repeat_interleave(torch.arange(num_graphs, device=device), real_node_counts * 2)
+
+#         real_node_offsets = torch.cat([
+#             torch.tensor([0], device=device),
+#             torch.cumsum(real_node_counts[:-1], dim=0)
+#         ])
+
+#         num_real_array = real_node_counts.tolist()
+#         real_start_array = real_node_offsets.tolist()
+
+#         graph_info = []
+#         edge_ptr = 0
+#         node_ptr = 0
+#         boundary_node_offset = total_real_nodes
+
+#         for g in range(num_graphs):
+#             num_real = num_real_array[g]
+#             real_start = real_start_array[g]
+#             left_start = boundary_node_offset
+#             right_start = left_start + num_real
+
+#             real_ids = torch.arange(real_start, real_start + num_real, device=device)
+#             left_ids = torch.arange(left_start, left_start + num_real, device=device)
+#             right_ids = torch.arange(right_start, right_start + num_real, device=device)
+
+#             # Node features
+#             real_x = x[real_ids]
+#             x_boundary[node_ptr : node_ptr + num_real] = real_x                     # left
+#             x_boundary[node_ptr + num_real : node_ptr + 2 * num_real] = -real_x    # right
+
+#             # Edges
+#             edge_index_boundary[:, edge_ptr : edge_ptr + num_real] = torch.stack([real_ids, left_ids], dim=0)
+#             edge_index_boundary[:, edge_ptr + num_real : edge_ptr + 2 * num_real] = torch.stack([real_ids, right_ids], dim=0)
+
+#             # Advance
+#             node_ptr += 2 * num_real
+#             edge_ptr += 2 * num_real
+#             boundary_node_offset = right_start + num_real
+
+#             num_boundary_nodes = 2 * num_real if num_real % 2 == 0 else 2 * num_real + 1
+#             graph_info.append({
+#                 'real_start': real_start,
+#                 'left_start': left_start,
+#                 'right_start': right_start,
+#                 'num_real': num_real,
+#                 'num_boundary': num_boundary_nodes
+#             })
+
+#         # Final concat
+#         edge_index = torch.cat([edge_index, edge_index_boundary], dim=1)
+#         x = torch.cat([x, x_boundary], dim=0)
+#         batch = torch.cat([batch, batch_boundary], dim=0)
+
+#         return edge_index, x, batch, graph_info

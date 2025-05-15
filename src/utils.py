@@ -26,22 +26,19 @@ def sample_weights_get_log_probs_batch(edge_weights_mean, edge_index, batch, num
     # Assign each edge to a graph using the source node's batch assignment
     edge_graph_indicator = batch[edge_index[0]]
 
-    # Expand edge means across samples — clone to preserve gradient tracking
-    edge_weights_mean_expanded = edge_weights_mean.repeat(num_draws_per_sample, 1)
-
     # Sample edge weights without tracking gradient
     with torch.no_grad():
         epsilon = torch.randn((num_draws_per_sample, num_edges), device=device)
-        sampled_edge_weights = edge_weights_mean_expanded + stddev * epsilon
+        sampled_edge_weights = edge_weights_mean.unsqueeze(0) + stddev * epsilon
 
     # Compute log-probs w.r.t. mean — differentiable!
-    log_probs_per_edge = - (sampled_edge_weights - edge_weights_mean_expanded)**2 / (2 * stddev**2)
+    log_probs_per_edge = - (sampled_edge_weights - edge_weights_mean.unsqueeze(0))**2 / (2 * stddev**2)
 
     # Aggregate log-probs per graph
     log_probs_per_graph = torch.zeros((num_draws_per_sample, num_samples_per_epoch), device=device)
-    for g in range(num_samples_per_epoch):
-        mask = (edge_graph_indicator == g)
-        log_probs_per_graph[:, g] = log_probs_per_edge[:, mask].sum(dim=1)
+    log_probs_per_graph.index_add_(dim=1, index=edge_graph_indicator, source=log_probs_per_edge)
+
+
     return sampled_edge_weights, log_probs_per_graph
 
 

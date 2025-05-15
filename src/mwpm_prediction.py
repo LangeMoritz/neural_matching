@@ -66,29 +66,27 @@ def compute_mwpm_rewards_batched(edge_index, sampled_edge_weights, graph_info, l
 
     num_draws, total_nodes = match.shape
     num_graphs = len(graph_info)
-    rewards = torch.ones((num_draws, num_graphs), dtype=torch.float32)
+    rewards = torch.ones((num_draws, num_graphs), dtype=torch.float32, device=edge_index.device)
+    wrong_mask = torch.zeros((num_draws, num_graphs), dtype=torch.bool, device=edge_index.device)
 
-    # Precompute node indices once
     u = np.arange(total_nodes)
+
     for g, info in enumerate(graph_info):
         log_class = logical_classes[g]
         rs = info["real_start"]
         ls = info["left_start"]
         num_real = info["num_real"]
 
-        # check: start node is a real node
         real_nodes = u[(u >= rs) & (u < rs + num_real)]
+        matched_v = match[:, real_nodes]
+        v_in_left = (matched_v >= ls) & (matched_v < ls + num_real)
+        num_left_edges = np.sum(v_in_left, axis=1)
 
-        # v = match[:, real_nodes]  # shape [num_draws, num_real]
-        matched_v = match[:, real_nodes]  # shape [num_draws, num_real]
-
-        # check: end node is a virtual node on the left boundary
-        v_in_left = (matched_v >= ls) & (matched_v < ls + num_real)  # shape [num_draws, num_real]
-
-        # count number of edges between real and left boundary nodes:
-        num_left_edges = np.sum(v_in_left, axis=1)  # shape [num_draws]
         predicted_wrong = (num_left_edges % 2) != log_class
-        rewards[predicted_wrong, g] = -1.0
+        wrong_mask[:, g] = torch.from_numpy(predicted_wrong)
+
+    rewards[wrong_mask] = -1.0
+
     return rewards
 
 
