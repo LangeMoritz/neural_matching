@@ -14,22 +14,22 @@ import gc
 # snakeviz figures_and_outputs/multi_syndromes.prof
 import wandb
 os.environ["WANDB_SILENT"] = "True"
-@profile
+
 def main():
     time_start = time.perf_counter()
     # Initialize the argument parser
-    # parser = argparse.ArgumentParser(description="Train the neural network with specified parameters")
-    # parser.add_argument('--d', type=int, required=True, help='The value of d')
+    parser = argparse.ArgumentParser(description="Train the neural network with specified parameters")
+    parser.add_argument('--d', type=int, required=True, help='The value of d')
 
-    # # Parse the arguments
-    # args = parser.parse_args()
+    # Parse the arguments
+    args = parser.parse_args()
 
-    # # Access the value of d
-    # d = args.d
+    # Access the value of d
+    d = args.d
 
-    # # Get the SLURM job ID from the environment
-    # job_id = os.environ.get('SLURM_JOB_ID', 'unknown')  # Default to 'unknown' if not running in SLURM
-    d = 3
+    # Get the SLURM job ID from the environment
+    job_id = os.environ.get('SLURM_JOB_ID', 'unknown')  # Default to 'unknown' if not running in SLURM
+    # d = 3
     p = [0.01, 0.05, 0.1, 0.15]  # physical error rates
     code = RotatedCode(d)
     print(f'Training d = {d}.')
@@ -37,7 +37,7 @@ def main():
     num_draws_per_sample = int(2e2)
     tot_num_samples = 0
 
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
     print(f"Using device: {device}")
     stddev = torch.tensor(0.05, dtype=torch.float32, device=device)
@@ -56,11 +56,10 @@ def main():
     model_folder = 'saved_models_code_capacity/'
     loaded_model_name = 'd5_250428_125713_Y_bsiased7028806'
     load_checkpoint_path =  model_folder + loaded_model_name + '.pt'  # path of existing checkpoint
-    current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
-    save_checkpoint_name = 'd' + str(d) + '_' + current_datetime + '_Y_biased.pt'# + job_id + '.pt'
+    # current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
+    save_checkpoint_name = 'd' + str(d) + '_Y_biased_' + job_id + '.pt'
     # save_checkpoint_name = loaded_model_name + '_resume_' + job_id + '.pt'
     save_checkpoint_path = model_folder + save_checkpoint_name
-    # save_checkpoint_path = f'saved_models_code_capacity/{name}.pt'
     
     start_epoch = 0
     try:
@@ -76,16 +75,16 @@ def main():
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-    # wandb.init(project="neural_matching_code_capacity", name = name, config = {
-    #     "learning_rate": lr,
-    #     "epochs": num_epochs,
-    #     "num_samples_per_epoch": num_samples_per_epoch,
-    #     "num_draws_per_sample": num_draws_per_sample,
-    #     "stddev": stddev.item(),
-    #     "d": d,
-    #     "p": p,
-    #     "hidden_channels_GCN": hidden_channels_GCN, 
-    #     "hidden_channels_MLP": hidden_channels_MLP})
+    wandb.init(project="neural_matching_code_capacity", name = name, config = {
+        "learning_rate": lr,
+        "epochs": num_epochs,
+        "num_samples_per_epoch": num_samples_per_epoch,
+        "num_draws_per_sample": num_draws_per_sample,
+        "stddev": stddev.item(),
+        "d": d,
+        "p": p,
+        "hidden_channels_GCN": hidden_channels_GCN, 
+        "hidden_channels_MLP": hidden_channels_MLP})
 
     baseline = 0
 
@@ -135,16 +134,15 @@ def main():
         # Print training progress
         if epoch % 1 == 0:
             print(f'Epoch [{epoch}/{num_epochs}]: Log-Loss: {epoch_expected_reward_gradient:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Baseline: {baseline:.4f}, Time: {epoch_time:.2f} seconds')
-    #     # Log to wandb
-    #     # wandb.log({
-    #     #     "epoch": epoch,
-    #     #     "log_loss": epoch_log_loss,
-    #     #     "mean_reward": epoch_reward,
-    #     #     "time": epoch_time,
-    #     #     "accuracy": train_acc,
-    #     # })
-    #     # # Save the checkpoint after the current epoch
-    #     # save_checkpoint(model, optimizer, epoch, epoch_reward, train_acc, epoch_log_loss, save_checkpoint_path)
+        # Log to wandb
+        wandb.log({
+            "epoch": epoch,
+            "log_loss": epoch_log_loss,
+            "mean_reward": epoch_reward,
+            "time": epoch_time
+        })
+        # Save the checkpoint after the current epoch
+        save_checkpoint(model, optimizer, epoch, epoch_reward, 0, epoch_log_loss, save_checkpoint_path)
     time_end = time.perf_counter()
     print(f'Total training time: {time_end - time_start:.2f}s')
 if __name__ == "__main__":

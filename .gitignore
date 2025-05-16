@@ -60,10 +60,13 @@ __pycache__
 
 # python virtual environment
 venv_neural_matching/
+venv_neural_matching_alvis/
 venv_vera_neural_matching/
 wandb/
 
 blossomV/
 build_decoder.ipynb
 ISAK/
+blossom5-v2.05.src/
 *.ipynb
+*.lprof
