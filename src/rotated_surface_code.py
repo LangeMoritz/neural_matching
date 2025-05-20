@@ -168,10 +168,10 @@ class RotatedCode:
         0 : no error, 1 : X error, 2: Y error, 3: Z error
         """
         n_qubits = self.n_qubits
-        eta = 10
-        p_y = p / (1 + 1 / eta)
-        p_x = p_z = p_y / (2 * eta) # Y biased noise
-        # p_x = p_y = p_z = p/3 # Unbiased noise
+        # eta = 10
+        # p_y = p / (1 + 1 / eta)
+        # p_x = p_z = p_y / (2 * eta) # Y biased noise
+        p_x = p_y = p_z = p/3 # Unbiased noise
         noise = np.zeros(n_qubits, dtype = np.uint8)
         draws = np.random.random(n_qubits)
         noise[(draws <= p_x)] = 1

@@ -10,6 +10,7 @@ import time
 from datetime import datetime
 from torch_geometric.data import Batch
 import gc
+import argparse
 # python -m cProfile -o figures_and_outputs/multi_syndromes.prof train_edge_predictor.py
 # snakeviz figures_and_outputs/multi_syndromes.prof
 import wandb
@@ -42,7 +43,7 @@ def main():
     print(f"Using device: {device}")
     stddev = torch.tensor(0.05, dtype=torch.float32, device=device)
     lr = 1e-5
-    num_epochs = 5
+    num_epochs = 2000
 
     hidden_channels_GCN = [32, 64, 128, 256]
     hidden_channels_MLP = [512, 128, 64]
@@ -54,11 +55,11 @@ def main():
 
     # Check for checkpoint and load if available
     model_folder = 'saved_models_code_capacity/'
-    loaded_model_name = 'd5_250428_125713_Y_bsiased7028806'
+    loaded_model_name = 'd9_depol_4463699'
     load_checkpoint_path =  model_folder + loaded_model_name + '.pt'  # path of existing checkpoint
     # current_datetime = datetime.now().strftime("%y%m%d_%H%M%S")
-    save_checkpoint_name = 'd' + str(d) + '_Y_biased_' + job_id + '.pt'
-    # save_checkpoint_name = loaded_model_name + '_resume_' + job_id + '.pt'
+    save_checkpoint_name = 'd' + str(d) + '_depol_' + job_id + '.pt'
+    save_checkpoint_name = loaded_model_name + '_resume_' + job_id + '.pt'
     save_checkpoint_path = model_folder + save_checkpoint_name
     
     start_epoch = 0
@@ -75,7 +76,7 @@ def main():
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-    wandb.init(project="neural_matching_code_capacity", name = name, config = {
+    wandb.init(project="neural_matching_code_capacity", name = save_checkpoint_name, config = {
         "learning_rate": lr,
         "epochs": num_epochs,
         "num_samples_per_epoch": num_samples_per_epoch,
@@ -133,16 +134,16 @@ def main():
         epoch_time = time.perf_counter() - epoch_time_start
         # Print training progress
         if epoch % 1 == 0:
-            print(f'Epoch [{epoch}/{num_epochs}]: Log-Loss: {epoch_expected_reward_gradient:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Baseline: {baseline:.4f}, Time: {epoch_time:.2f} seconds')
+            print(f'Epoch [{epoch}/{num_epochs}]: Expected Reward Gradient: {epoch_expected_reward_gradient:.4f}, Mean Reward: {epoch_reward:.4f}, No. Samples: {tot_num_samples}, Baseline: {baseline:.4f}, Time: {epoch_time:.2f} seconds')
         # Log to wandb
         wandb.log({
             "epoch": epoch,
-            "log_loss": epoch_log_loss,
+            "expected_reward_gradient": epoch_expected_reward_gradient,
             "mean_reward": epoch_reward,
             "time": epoch_time
         })
         # Save the checkpoint after the current epoch
-        save_checkpoint(model, optimizer, epoch, epoch_reward, 0, epoch_log_loss, save_checkpoint_path)
+        save_checkpoint(model, optimizer, epoch, epoch_reward, 0, epoch_expected_reward_gradient, save_checkpoint_path)
     time_end = time.perf_counter()
     print(f'Total training time: {time_end - time_start:.2f}s')
 if __name__ == "__main__":
