@@ -68,7 +68,7 @@ def main():
         start_epoch = checkpoint['epoch']  # Get the epoch from checkpoint
         model.load_state_dict(checkpoint['model_state_dict'])  # Load model weights
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])  # Load optimizer state
-        print(f"Checkpoint loaded, continuing from epoch {start_epoch}.")
+        print(f"Checkpoint loaded, continuing from epoch {start_epoch} with {load_checkpoint_path}.")
     except FileNotFoundError:
         print("No checkpoint found, starting from scratch.")
     num_epochs = start_epoch + num_epochs

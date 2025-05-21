@@ -40,10 +40,6 @@ class EdgeWeightGNN_stim(nn.Module):
                 nn.Linear(in_channels, out_channels)
                 for (in_channels, out_channels) in zip(hidden_channels_MLP[:-1], hidden_channels_MLP[1:])
             ])
-        # output followed by a sigmoid activation:
-        self.ouput = nn.Sequential(
-            nn.Linear(hidden_channels_MLP[-1], 1),
-            nn.Sigmoid())
  
     def forward(self, x, edge_index, edge_weights):
         """
@@ -227,11 +223,6 @@ class EdgeWeightGNN(nn.Module):
             nn.Linear(2 * hidden_channels_GCN[-1], hidden_channels_MLP[0])] +
             [nn.Linear(in_c, out_c) for in_c, out_c in zip(hidden_channels_MLP[:-1], hidden_channels_MLP[1:])] + 
             [nn.Linear(hidden_channels_MLP[-1], 1)])
-
-        # output followed by a sigmoid activation:
-        self.ouput = nn.Sequential(
-            nn.Linear(hidden_channels_MLP[-1], 1),
-            nn.Sigmoid())
         
     def forward(self, x, edge_index, edge_weights):
         """
